@@ -1,1 +1,2 @@
 - [OpenAPI e Zod](openapi-zod.md) — neste workspace, contratos com integer e formatos avançados geram APIs do Zod 4; mantenha os schemas compatíveis com a versão instalada.
+- [Direção de marca JURB](jurb-brand-direction.md) — o logo fornecido define a identidade laranja, carvão e cinza para novos designs.

@@ -1,0 +1,51 @@
+.nexa-banner {
+  --nexa-ink: #111820;
+  --nexa-orange: #ff8a0a;
+  --nexa-orange-soft: #ffb85d;
+  --nexa-paper: #f4f1eb;
+  --nexa-line: rgba(244, 241, 235, .18);
+  font-family: 'DM Sans', sans-serif;
+}
+
+.nexa-display {
+  font-family: 'Bricolage Grotesque', sans-serif;
+}
+
+.nexa-grid {
+  background-image: linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+.nexa-scanline {
+  background-image: linear-gradient(90deg, transparent 0 49%, rgba(255, 138, 10, .18) 49.5% 50.5%, transparent 51%);
+  background-size: 12px 100%;
+}
+
+.nexa-cta {
+  transition: transform 180ms ease, background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+.nexa-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(255, 138, 10, .24);
+}
+
+.nexa-cta:focus-visible,
+.nexa-link:focus-visible {
+  outline: 3px solid var(--nexa-orange-soft);
+  outline-offset: 4px;
+}
+
+.nexa-product {
+  transition: transform 700ms cubic-bezier(.2, .8, .2, 1);
+}
+
+.nexa-banner:hover .nexa-product {
+  transform: scale(1.035);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexa-cta, .nexa-product { transition: none; }
+  .nexa-cta:hover { transform: none; }
+}
