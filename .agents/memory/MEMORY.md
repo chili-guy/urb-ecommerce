@@ -1,0 +1,1 @@
+- [OpenAPI e Zod](openapi-zod.md) — neste workspace, contratos com integer e formatos avançados geram APIs do Zod 4; mantenha os schemas compatíveis com a versão instalada.

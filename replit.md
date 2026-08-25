@@ -1,6 +1,6 @@
-# [Project name]
+# Nexa Eletrônicos
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Loja online de eletrônicos com catálogo, carrinho, checkout, área do cliente e painel administrativo.
 
 ## Run & Operate
 
@@ -22,23 +22,33 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/web/src/` — interface da loja, páginas, carrinho e painel administrativo
+- `artifacts/api-server/src/routes/store.ts` — catálogo, pedidos, frete, perfil e métricas
+- `lib/api-spec/openapi.yaml` — contrato fonte das rotas e tipos da aplicação
+- `lib/db/src/schema/` — tabelas de produtos, perfis, pedidos e itens de pedido
+- `artifacts/web/public/images/` — imagens originais dos produtos do catálogo inicial
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- O catálogo e os pedidos usam PostgreSQL com Drizzle para que alterações feitas no painel persistam após recarregar.
+- A cotação de frete é isolada em uma camada de opções; o fluxo atual funciona com cotações locais enquanto a conta de uma transportadora não é conectada.
+- A especificação OpenAPI permanece como fonte única para gerar os hooks React Query e os validadores do servidor.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Navegação por destaques e catálogo com busca e categorias.
+- Detalhes do produto, carrinho local e checkout com opções de entrega.
+- Perfil editável e histórico de pedidos.
+- Painel administrativo com métricas e CRUD de produtos.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+_Nenhuma preferência registrada._
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Depois de alterar `lib/api-spec/openapi.yaml`, execute o codegen antes de usar os hooks atualizados.
+- O catálogo inicial depende dos arquivos em `artifacts/web/public/images/`.
 
 ## Pointers
 

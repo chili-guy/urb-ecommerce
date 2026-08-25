@@ -10,6 +10,16 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: products
+    description: Product catalog operations
+  - name: shipping
+    description: Shipping quotes and delivery options
+  - name: orders
+    description: Order creation and order history
+  - name: profile
+    description: Customer profile operations
+  - name: dashboard
+    description: Store performance metrics
 paths:
   /healthz:
     get:
@@ -24,7 +34,243 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /products:
+    get:
+      operationId: listProducts
+      tags: [products]
+      summary: List products
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: featured
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Product list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+    post:
+      operationId: createProduct
+      tags: [products]
+      summary: Create a product
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "201":
+          description: Product created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          description: Invalid product
+  /products/{id}:
+    get:
+      operationId: getProduct
+      tags: [products]
+      summary: Get a product
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+      responses:
+        "200":
+          description: Product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: Product not found
+    patch:
+      operationId: updateProduct
+      tags: [products]
+      summary: Update a product
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductUpdate"
+      responses:
+        "200":
+          description: Product updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: Product not found
+    delete:
+      operationId: deleteProduct
+      tags: [products]
+      summary: Delete a product
+      parameters:
+        - $ref: "#/components/parameters/ProductId"
+      responses:
+        "204":
+          description: Product deleted
+        "404":
+          description: Product not found
+  /shipping/quote:
+    post:
+      operationId: getShippingQuote
+      tags: [shipping]
+      summary: Calculate delivery options
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShippingQuoteInput"
+      responses:
+        "200":
+          description: Delivery options
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShippingOption"
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: List orders for a customer
+      parameters:
+        - name: email
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Order list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+    post:
+      operationId: createOrder
+      tags: [orders]
+      summary: Create an order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderInput"
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          description: Invalid order
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get an order
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          description: Order not found
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get the demo customer profile
+      responses:
+        "200":
+          description: Customer profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+    patch:
+      operationId: updateProfile
+      tags: [profile]
+      summary: Update the customer profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get store metrics
+      responses:
+        "200":
+          description: Store metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
 components:
+  parameters:
+    ProductId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: number
+        minimum: 1
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: number
+        minimum: 1
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +279,167 @@ components:
           type: string
       required:
         - status
+    Product:
+      type: object
+      required: [id, name, slug, description, category, price, stock, imageUrl, featured, rating, reviewCount]
+      properties:
+        id: { type: number }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string }
+        category: { type: string }
+        price: { type: number }
+        compareAtPrice: { type: ["number", "null"] }
+        stock: { type: number }
+        imageUrl: { type: string }
+        featured: { type: boolean }
+        rating: { type: number }
+        reviewCount: { type: number }
+        createdAt: { type: string, format: date-time }
+    ProductInput:
+      type: object
+      required: [name, description, category, price, stock, imageUrl]
+      properties:
+        name: { type: string, minLength: 2 }
+        description: { type: string, minLength: 2 }
+        category: { type: string, minLength: 2 }
+        price: { type: number, minimum: 0 }
+        compareAtPrice: { type: ["number", "null"], minimum: 0 }
+        stock: { type: number, minimum: 0 }
+        imageUrl: { type: string }
+        featured: { type: boolean, default: false }
+    ProductUpdate:
+      allOf:
+        - $ref: "#/components/schemas/ProductInput"
+      description: Product fields to update
+    ShippingQuoteInput:
+      type: object
+      required: [postalCode, items]
+      properties:
+        postalCode: { type: string, minLength: 8 }
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OrderItemInput"
+    ShippingOption:
+      type: object
+      required: [id, carrier, service, price, deliveryDays, description]
+      properties:
+        id: { type: string }
+        carrier: { type: string }
+        service: { type: string }
+        price: { type: number }
+        deliveryDays: { type: number }
+        description: { type: string }
+    OrderItemInput:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId: { type: number, minimum: 1 }
+        quantity: { type: number, minimum: 1 }
+    OrderItem:
+      type: object
+      required: [productId, productName, quantity, unitPrice, total]
+      properties:
+        productId: { type: number }
+        productName: { type: string }
+        quantity: { type: number }
+        unitPrice: { type: number }
+        total: { type: number }
+    Order:
+      type: object
+      required: [id, customerName, customerEmail, status, subtotal, shipping, total, shippingOption, items, createdAt]
+      properties:
+        id: { type: number }
+        customerName: { type: string }
+        customerEmail: { type: string }
+        status: { type: string }
+        subtotal: { type: number }
+        shipping: { type: number }
+        total: { type: number }
+        shippingOption: { $ref: "#/components/schemas/ShippingOption" }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        createdAt: { type: string, format: date-time }
+    OrderInput:
+      type: object
+      required: [customerName, customerEmail, postalCode, shippingOptionId, items]
+      properties:
+        customerName: { type: string, minLength: 2 }
+        customerEmail: { type: string }
+        postalCode: { type: string, minLength: 8 }
+        shippingOptionId: { type: string }
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OrderItemInput"
+    Profile:
+      type: object
+      required: [id, name, email, phone, postalCode, city, state]
+      properties:
+        id: { type: number }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        postalCode: { type: string }
+        city: { type: string }
+        state: { type: string }
+    ProfileUpdate:
+      type: object
+      required: [name, email, phone, postalCode, city, state]
+      properties:
+        name: { type: string, minLength: 2 }
+        email: { type: string }
+        phone: { type: string }
+        postalCode: { type: string }
+        city: { type: string }
+        state: { type: string }
+    DashboardSummary:
+      type: object
+      required: [revenue, revenueChange, orders, ordersChange, customers, products, salesByDay, topProducts, recentOrders]
+      properties:
+        revenue: { type: number }
+        revenueChange: { type: number }
+        orders: { type: number }
+        ordersChange: { type: number }
+        customers: { type: number }
+        products: { type: number }
+        salesByDay:
+          type: array
+          items:
+            $ref: "#/components/schemas/SalesPoint"
+        topProducts:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopProduct"
+        recentOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecentOrder"
+    SalesPoint:
+      type: object
+      required: [label, value]
+      properties:
+        label: { type: string }
+        value: { type: number }
+    TopProduct:
+      type: object
+      required: [name, sales, revenue]
+      properties:
+        name: { type: string }
+        sales: { type: number }
+        revenue: { type: number }
+    RecentOrder:
+      type: object
+      required: [id, customerName, total, status, createdAt]
+      properties:
+        id: { type: number }
+        customerName: { type: string }
+        total: { type: number }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
 
