@@ -28,8 +28,10 @@ export function ProductCard({ product }: { product: Product }) {
             alt={product.name} 
             className="object-contain w-full h-full mix-blend-multiply group-hover:scale-105 transition-transform duration-500"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = 'https://placehold.co/400x300/e2e8f0/1e293b?text=Produto';
+              (e.target as HTMLImageElement).src = '/images/keyboard.jpg';
             }}
+            loading="lazy"
+            decoding="async"
           />
         </div>
         

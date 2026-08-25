@@ -6,7 +6,7 @@ import { Search, SlidersHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 
-const CATEGORIES = ["Todos", "Laptops", "Smartphones", "Audio", "Monitores", "Acessórios"];
+const CATEGORIES = ["Todos", "Laptops", "Tablets", "Smartphones", "Câmeras", "Áudio", "Monitores", "Gaming", "Wearables", "Periféricos", "Acessórios"];
 
 export default function Catalog() {
   const [location] = useLocation();
