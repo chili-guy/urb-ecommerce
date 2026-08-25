@@ -139,7 +139,7 @@ export default function ProductDetail() {
             <div className="grid grid-cols-2 gap-4 pt-4">
               <div className="flex gap-3 text-sm text-muted-foreground">
                 <ShieldCheck className="h-5 w-5 text-primary shrink-0" />
-                <span>Garantia de 12 meses direto com a Nexa.</span>
+                <span>Garantia de 12 meses direto com a JURB.</span>
               </div>
               <div className="flex gap-3 text-sm text-muted-foreground">
                 <Truck className="h-5 w-5 text-primary shrink-0" />
