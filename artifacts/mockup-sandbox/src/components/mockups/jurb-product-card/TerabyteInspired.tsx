@@ -1,4 +1,4 @@
-import { Heart, Rocket, Star } from 'lucide-react';
+import { Rocket, ShoppingCart, Star } from 'lucide-react';
 import './_group.css';
 
 export function TerabyteInspired() {
@@ -8,13 +8,6 @@ export function TerabyteInspired() {
         <span className="jurb-card-mono absolute left-3 top-3 z-10 rounded-lg bg-[#ff6a13] px-2.5 py-1.5 text-xs font-bold text-white shadow-[0_5px_14px_rgba(255,106,19,.28)]">
           -12%
         </span>
-        <button
-          aria-label="Adicionar aos favoritos"
-          className="jurb-icon-button absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-[#70777d] shadow-sm transition-colors hover:text-[#ff6a13]"
-        >
-          <Heart size={20} />
-        </button>
-
         <div className="flex h-[250px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#fdfdfd] px-4 pt-4">
           <img
             src="/__mockup/images/jurb-card-console.jpg"
@@ -42,19 +35,27 @@ export function TerabyteInspired() {
             <span className="text-xs text-[#555]">(128)</span>
           </div>
 
-          <div className="mt-auto">
-            <p className="text-xs text-[#8a8a8a]">
-              De: <span className="line-through">R$ 3.999,00</span> por:
-            </p>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <strong className="text-[25px] font-bold leading-none text-[#2f7f57]">R$ 3.499,00</strong>
-              <span className="rounded bg-[#e6f2eb] px-2 py-1 text-[10px] font-bold text-[#2f7f57]">
-                à vista no Pix
-              </span>
+          <div className="mt-auto flex items-end justify-between gap-3">
+            <div>
+              <p className="text-xs text-[#8a8a8a]">
+                De: <span className="line-through">R$ 3.999,00</span> por:
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <strong className="text-[25px] font-bold leading-none text-[#2f7f57]">R$ 3.499,00</strong>
+                <span className="rounded bg-[#e6f2eb] px-2 py-1 text-[10px] font-bold text-[#2f7f57]">
+                  à vista no Pix
+                </span>
+              </div>
+              <p className="mt-3 text-xs text-[#555]">
+                12x de <strong>R$ 291,58</strong> sem juros
+              </p>
             </div>
-            <p className="mt-3 text-xs text-[#555]">
-              12x de <strong>R$ 291,58</strong> sem juros no cartão
-            </p>
+            <button
+              aria-label="Adicionar ao carrinho"
+              className="jurb-buy-button grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#ff5a14] text-white shadow-[0_7px_18px_rgba(255,90,20,.3)] transition-colors hover:bg-[#dc4100]"
+            >
+              <ShoppingCart size={21} strokeWidth={2.3} />
+            </button>
           </div>
         </div>
       </article>
