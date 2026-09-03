@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+.jurb-card-stage {
+  --jurb-ink: #111820;
+  --jurb-orange: #ff8a0a;
+  --jurb-orange-dark: #e66f00;
+  --jurb-paper: #f4f1eb;
+  --jurb-line: #d8d2c8;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.jurb-card-display {
+  font-family: 'Bricolage Grotesque', sans-serif;
+}
+
+.jurb-card-mono {
+  font-family: 'Space Mono', monospace;
+}
+
+.jurb-commerce-card {
+  box-shadow: 0 10px 34px rgba(17, 24, 32, 0.08);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.jurb-commerce-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(255, 138, 10, 0.72);
+  box-shadow: 0 20px 48px rgba(17, 24, 32, 0.14);
+}
+
+.jurb-commerce-card:hover .jurb-card-image {
+  transform: scale(1.045);
+}
+
+.jurb-card-image {
+  transition: transform 360ms cubic-bezier(.2, .8, .2, 1);
+}
+
+.jurb-icon-button:focus-visible,
+.jurb-buy-button:focus-visible {
+  outline: 3px solid #ffc57f;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jurb-commerce-card,
+  .jurb-card-image {
+    transition: none;
+  }
+
+  .jurb-commerce-card:hover,
+  .jurb-commerce-card:hover .jurb-card-image {
+    transform: none;
+  }
+}
