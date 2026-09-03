@@ -12,7 +12,7 @@ export function TerabyteInspired() {
           <img
             src="/__mockup/images/jurb-card-console-transparent.png"
             alt="Console Core Station"
-            className="jurb-card-image h-[220px] w-full object-contain"
+            className="jurb-card-image h-[270px] w-[270px] max-w-none object-contain"
           />
         </div>
 
