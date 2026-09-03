@@ -102,12 +102,12 @@ export default function Home() {
           {isLoading ? (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="flex h-[400px] flex-col border border-[#111820]/15 bg-[#f7f4ef] p-4 animate-pulse">
-                  <div className="mb-4 h-48 w-full bg-[#e7dfd4]" />
-                  <div className="mb-4 h-4 w-24 bg-[#e7dfd4]" />
-                  <div className="mb-2 h-6 w-full bg-[#e7dfd4]" />
-                  <div className="mb-auto h-6 w-2/3 bg-[#e7dfd4]" />
-                  <div className="mt-4 h-6 w-32 bg-[#e7dfd4]" />
+                <div key={i} className="flex h-[560px] flex-col rounded-2xl border border-[#e4dfd7] bg-white p-4 animate-pulse">
+                  <div className="mb-4 h-[250px] w-full rounded-xl bg-[#eee9e1]" />
+                  <div className="mb-4 h-5 w-24 rounded bg-[#e8f5ec]" />
+                  <div className="mb-2 h-5 w-full rounded bg-[#eee9e1]" />
+                  <div className="mb-auto h-5 w-2/3 rounded bg-[#eee9e1]" />
+                  <div className="mt-4 h-7 w-36 rounded bg-[#e6f2eb]" />
                 </div>
               ))}
             </div>
