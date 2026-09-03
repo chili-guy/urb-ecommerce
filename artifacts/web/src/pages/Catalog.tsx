@@ -83,8 +83,8 @@ export default function Catalog() {
           {isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
               {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="rounded-lg border bg-card h-[400px] animate-pulse p-4 flex flex-col">
-                  <div className="w-full h-48 bg-secondary/50 rounded-md mb-4" />
+                <div key={i} className="h-[560px] animate-pulse rounded-2xl border bg-white p-4 flex flex-col">
+                  <div className="w-full h-[250px] bg-secondary/50 rounded-xl mb-4" />
                   <div className="w-24 h-4 bg-secondary rounded mb-4" />
                   <div className="w-full h-6 bg-secondary rounded mb-2" />
                   <div className="w-full h-6 bg-secondary rounded mb-2" />

@@ -165,11 +165,15 @@
 
 @media (prefers-reduced-motion: reduce) {
   .jurb-cta,
-  .jurb-product {
+  .jurb-product,
+  .jurb-catalog-card,
+  .jurb-catalog-card-image {
     transition: none;
   }
 
-  .jurb-cta:hover {
+  .jurb-cta:hover,
+  .jurb-catalog-card:hover,
+  .jurb-catalog-card:hover .jurb-catalog-card-image {
     transform: none;
   }
 }
