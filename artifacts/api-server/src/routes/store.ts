@@ -31,6 +31,7 @@ import {
   productsTable,
   profilesTable,
 } from "@workspace/db";
+import { requireRole } from "../middlewares/admin-auth";
 
 const router: IRouter = Router();
 
@@ -146,7 +147,7 @@ router.get("/products", async (req, res): Promise<void> => {
   res.json(ListProductsResponse.parse(products));
 });
 
-router.post("/products", async (req, res): Promise<void> => {
+router.post("/products", requireRole("admin", "operator"), async (req, res): Promise<void> => {
   const parsed = CreateProductBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -184,7 +185,7 @@ router.get("/products/:id", async (req, res): Promise<void> => {
   res.json(GetProductResponse.parse(product));
 });
 
-router.patch("/products/:id", async (req, res): Promise<void> => {
+router.patch("/products/:id", requireRole("admin", "operator"), async (req, res): Promise<void> => {
   const params = UpdateProductParams.safeParse(req.params);
   const body = UpdateProductBody.safeParse(req.body);
   if (!params.success) {
@@ -211,7 +212,7 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   res.json(UpdateProductResponse.parse(product));
 });
 
-router.delete("/products/:id", async (req, res): Promise<void> => {
+router.delete("/products/:id", requireRole("admin"), async (req, res): Promise<void> => {
   const params = DeleteProductParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -413,7 +414,7 @@ router.patch("/profile", async (req, res): Promise<void> => {
   res.json(UpdateProfileResponse.parse(profile));
 });
 
-router.get("/dashboard/summary", async (_req, res): Promise<void> => {
+router.get("/dashboard/summary", requireRole("admin", "operator"), async (_req, res): Promise<void> => {
   const [{ orders }] = await db
     .select({ orders: count() })
     .from(ordersTable);
@@ -426,6 +427,12 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
   const [{ revenue }] = await db
     .select({ revenue: sql<number>`coalesce(sum(${ordersTable.total}), 0)` })
     .from(ordersTable);
+  const [{ inventoryUnits, lowStock }] = await db
+    .select({
+      inventoryUnits: sql<number>`coalesce(sum(${productsTable.stock}), 0)`,
+      lowStock: sql<number>`coalesce(sum(case when ${productsTable.stock} <= 5 then 1 else 0 end), 0)`,
+    })
+    .from(productsTable);
 
   const recentOrderRows = await db
     .select()
@@ -467,6 +474,8 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
       ordersChange: 0,
       customers,
       products,
+      inventoryUnits: Number(inventoryUnits),
+      lowStock: Number(lowStock),
       salesByDay,
       topProducts: topProductRows.map((product) => ({
         name: product.name,

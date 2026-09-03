@@ -20,6 +20,10 @@ tags:
     description: Customer profile operations
   - name: dashboard
     description: Store performance metrics
+  - name: admin-auth
+    description: Restricted store team authentication
+  - name: admin-users
+    description: Restricted store team management
 paths:
   /healthz:
     get:
@@ -255,6 +259,173 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardSummary"
+  /admin/auth/login:
+    post:
+      operationId: adminLogin
+      tags: [admin-auth]
+      summary: Sign in to the store administration area
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLoginInput"
+      responses:
+        "200":
+          description: Authenticated administrator
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSession"
+        "401":
+          description: Invalid credentials
+        "429":
+          description: Too many login attempts
+  /admin/auth/setup-status:
+    get:
+      operationId: getAdminSetupStatus
+      tags: [admin-auth]
+      summary: Check whether the first administrator still needs to be configured
+      responses:
+        "200":
+          description: Setup status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSetupStatus"
+  /admin/auth/setup:
+    post:
+      operationId: adminSetup
+      tags: [admin-auth]
+      summary: Configure the first administrator with an environment-controlled secret
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminSetupInput"
+      responses:
+        "201":
+          description: First administrator created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSession"
+        "400":
+          description: Invalid setup data
+        "401":
+          description: Invalid setup secret
+        "409":
+          description: An administrator is already configured
+        "429":
+          description: Too many setup attempts
+  /admin/auth/logout:
+    post:
+      operationId: adminLogout
+      tags: [admin-auth]
+      summary: Sign out of the store administration area
+      responses:
+        "204":
+          description: Signed out
+  /admin/auth/me:
+    get:
+      operationId: getAdminSession
+      tags: [admin-auth]
+      summary: Get the current administration session
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSession"
+        "401":
+          description: Authentication required
+  /admin/users:
+    get:
+      operationId: listAdminUsers
+      tags: [admin-users]
+      summary: List store team users
+      responses:
+        "200":
+          description: Store team users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminUser"
+        "401":
+          description: Authentication required
+        "403":
+          description: Administrator role required
+    post:
+      operationId: createAdminUser
+      tags: [admin-users]
+      summary: Create a store team user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserInput"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+        "400":
+          description: Invalid user
+        "401":
+          description: Authentication required
+        "403":
+          description: Administrator role required
+  /admin/users/{id}:
+    patch:
+      operationId: updateAdminUser
+      tags: [admin-users]
+      summary: Update a store team user
+      parameters:
+        - $ref: "#/components/parameters/AdminUserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUserUpdate"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+        "400":
+          description: Invalid user
+        "401":
+          description: Authentication required
+        "403":
+          description: Administrator role required
+        "404":
+          description: User not found
+  /admin/orders:
+    get:
+      operationId: listAdminOrders
+      tags: [orders]
+      summary: List all orders for the store team
+      responses:
+        "200":
+          description: Store orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+        "401":
+          description: Authentication required
 components:
   parameters:
     ProductId:
@@ -265,6 +436,13 @@ components:
         type: number
         minimum: 1
     OrderId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: number
+        minimum: 1
+    AdminUserId:
       name: id
       in: path
       required: true
@@ -400,7 +578,7 @@ components:
         state: { type: string }
     DashboardSummary:
       type: object
-      required: [revenue, revenueChange, orders, ordersChange, customers, products, salesByDay, topProducts, recentOrders]
+      required: [revenue, revenueChange, orders, ordersChange, customers, products, inventoryUnits, lowStock, salesByDay, topProducts, recentOrders]
       properties:
         revenue: { type: number }
         revenueChange: { type: number }
@@ -408,6 +586,8 @@ components:
         ordersChange: { type: number }
         customers: { type: number }
         products: { type: number }
+        inventoryUnits: { type: number }
+        lowStock: { type: number }
         salesByDay:
           type: array
           items:
@@ -442,4 +622,62 @@ components:
         total: { type: number }
         status: { type: string }
         createdAt: { type: string, format: date-time }
+    AdminRole:
+      type: string
+      enum: [admin, operator]
+    AdminLoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, minLength: 3 }
+        password: { type: string, minLength: 8 }
+    AdminSetupStatus:
+      type: object
+      required: [needsSetup]
+      properties:
+        needsSetup: { type: boolean }
+    AdminSetupInput:
+      type: object
+      required: [name, email, password, setupSecret]
+      properties:
+        name: { type: string, minLength: 2 }
+        email: { type: string, minLength: 3 }
+        password: { type: string, minLength: 12 }
+        setupSecret: { type: string, minLength: 8 }
+    AdminUser:
+      type: object
+      required: [id, name, email, role, active, lastLoginAt, createdAt]
+      properties:
+        id: { type: number }
+        name: { type: string }
+        email: { type: string }
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        active: { type: boolean }
+        lastLoginAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+    AdminUserInput:
+      type: object
+      required: [name, email, password, role]
+      properties:
+        name: { type: string, minLength: 2 }
+        email: { type: string, minLength: 3 }
+        password: { type: string, minLength: 8 }
+        role:
+          $ref: "#/components/schemas/AdminRole"
+    AdminUserUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2 }
+        email: { type: string, minLength: 3 }
+        password: { type: string, minLength: 8 }
+        role:
+          $ref: "#/components/schemas/AdminRole"
+        active: { type: boolean }
+    AdminSession:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: "#/components/schemas/AdminUser"
 

@@ -10,6 +10,8 @@ Loja online de eletrônicos com catálogo, carrinho, checkout, área do cliente 
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
+- Required env: `SESSION_SECRET` — signs the HttpOnly administrative session cookie
+- Optional env: `ADMIN_BOOTSTRAP_SECRET` — one-time key for configuring the first administrator; when absent, `SESSION_SECRET` is used. Store it only in Replit Secrets.
 
 ## Stack
 
@@ -40,6 +42,7 @@ Loja online de eletrônicos com catálogo, carrinho, checkout, área do cliente 
 - Detalhes do produto, carrinho local e checkout com opções de entrega.
 - Perfil editável e histórico de pedidos.
 - Painel administrativo com métricas e CRUD de produtos.
+- O primeiro administrador é configurado uma única vez em `/admin` com a chave de inicialização do ambiente; o app não cria credenciais padrão e não reabre essa etapa depois de concluída.
 
 ## User preferences
 

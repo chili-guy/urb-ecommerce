@@ -152,9 +152,77 @@ export interface DashboardSummary {
   ordersChange: number;
   customers: number;
   products: number;
+  inventoryUnits: number;
+  lowStock: number;
   salesByDay: SalesPoint[];
   topProducts: TopProduct[];
   recentOrders: RecentOrder[];
+}
+
+export type AdminRole = typeof AdminRole[keyof typeof AdminRole];
+
+
+export const AdminRole = {
+  admin: 'admin',
+  operator: 'operator',
+} as const;
+
+export interface AdminLoginInput {
+  /** @minLength 3 */
+  email: string;
+  /** @minLength 8 */
+  password: string;
+}
+
+export interface AdminSetupStatus {
+  needsSetup: boolean;
+}
+
+export interface AdminSetupInput {
+  /** @minLength 2 */
+  name: string;
+  /** @minLength 3 */
+  email: string;
+  /** @minLength 12 */
+  password: string;
+  /** @minLength 8 */
+  setupSecret: string;
+}
+
+export interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  role: AdminRole;
+  active: boolean;
+  /** @nullable */
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminUserInput {
+  /** @minLength 2 */
+  name: string;
+  /** @minLength 3 */
+  email: string;
+  /** @minLength 8 */
+  password: string;
+  role: AdminRole;
+}
+
+export interface AdminUserUpdate {
+  /** @minLength 2 */
+  name?: string;
+  /** @minLength 3 */
+  email?: string;
+  /** @minLength 8 */
+  password?: string;
+  role?: AdminRole;
+  active?: boolean;
+}
+
+export interface AdminSession {
+  user: AdminUser;
 }
 
 export type ListProductsParams = {

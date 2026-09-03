@@ -25,19 +25,27 @@ const queryClient = new QueryClient();
 
 function Router() {
   return (
+    <RoutedErrorBoundary>
+      <Switch>
+        <Route path="/admin" component={Admin} />
+        <Route component={StorefrontRouter} />
+      </Switch>
+    </RoutedErrorBoundary>
+  );
+}
+
+function StorefrontRouter() {
+  return (
     <AppShell>
-      <RoutedErrorBoundary>
-        <Switch>
-          <Route path="/" component={Home} />
-          <Route path="/catalogo" component={Catalog} />
-          <Route path="/produto/:id" component={ProductDetail} />
-          <Route path="/carrinho" component={Cart} />
-          <Route path="/checkout" component={Checkout} />
-          <Route path="/conta" component={Account} />
-          <Route path="/admin" component={Admin} />
-          <Route component={NotFound} />
-        </Switch>
-      </RoutedErrorBoundary>
+      <Switch>
+        <Route path="/" component={Home} />
+        <Route path="/catalogo" component={Catalog} />
+        <Route path="/produto/:id" component={ProductDetail} />
+        <Route path="/carrinho" component={Cart} />
+        <Route path="/checkout" component={Checkout} />
+        <Route path="/conta" component={Account} />
+        <Route component={NotFound} />
+      </Switch>
     </AppShell>
   );
 }

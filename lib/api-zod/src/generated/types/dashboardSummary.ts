@@ -16,6 +16,8 @@ export interface DashboardSummary {
   ordersChange: number;
   customers: number;
   products: number;
+  inventoryUnits: number;
+  lowStock: number;
   salesByDay: SalesPoint[];
   topProducts: TopProduct[];
   recentOrders: RecentOrder[];

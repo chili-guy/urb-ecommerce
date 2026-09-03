@@ -389,6 +389,8 @@ export const GetDashboardSummaryResponse = zod.object({
   "ordersChange": zod.number(),
   "customers": zod.number(),
   "products": zod.number(),
+  "inventoryUnits": zod.number(),
+  "lowStock": zod.number(),
   "salesByDay": zod.array(zod.object({
   "label": zod.string(),
   "value": zod.number()
@@ -406,5 +408,207 @@ export const GetDashboardSummaryResponse = zod.object({
   "createdAt": zod.coerce.date()
 }))
 })
+
+
+/**
+ * @summary Sign in to the store administration area
+ */
+export const adminLoginBodyEmailMin = 3;
+
+export const adminLoginBodyPasswordMin = 8;
+
+
+
+export const AdminLoginBody = zod.object({
+  "email": zod.string().min(adminLoginBodyEmailMin),
+  "password": zod.string().min(adminLoginBodyPasswordMin)
+})
+
+export const AdminLoginResponse = zod.object({
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "role": zod.enum(['admin', 'operator']),
+  "active": zod.boolean(),
+  "lastLoginAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Check whether the first administrator still needs to be configured
+ */
+export const GetAdminSetupStatusResponse = zod.object({
+  "needsSetup": zod.boolean()
+})
+
+
+/**
+ * @summary Configure the first administrator with an environment-controlled secret
+ */
+export const adminSetupBodyNameMin = 2;
+
+export const adminSetupBodyEmailMin = 3;
+
+export const adminSetupBodyPasswordMin = 12;
+
+export const adminSetupBodySetupSecretMin = 8;
+
+
+
+export const AdminSetupBody = zod.object({
+  "name": zod.string().min(adminSetupBodyNameMin),
+  "email": zod.string().min(adminSetupBodyEmailMin),
+  "password": zod.string().min(adminSetupBodyPasswordMin),
+  "setupSecret": zod.string().min(adminSetupBodySetupSecretMin)
+})
+
+export const AdminSetupResponse = zod.object({
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "role": zod.enum(['admin', 'operator']),
+  "active": zod.boolean(),
+  "lastLoginAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Sign out of the store administration area
+ */
+export const AdminLogoutResponse = zod.void()
+
+
+/**
+ * @summary Get the current administration session
+ */
+export const GetAdminSessionResponse = zod.object({
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "role": zod.enum(['admin', 'operator']),
+  "active": zod.boolean(),
+  "lastLoginAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary List store team users
+ */
+export const ListAdminUsersResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "role": zod.enum(['admin', 'operator']),
+  "active": zod.boolean(),
+  "lastLoginAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListAdminUsersResponse = zod.array(ListAdminUsersResponseItem)
+
+
+/**
+ * @summary Create a store team user
+ */
+export const createAdminUserBodyNameMin = 2;
+
+export const createAdminUserBodyEmailMin = 3;
+
+export const createAdminUserBodyPasswordMin = 8;
+
+
+
+export const CreateAdminUserBody = zod.object({
+  "name": zod.string().min(createAdminUserBodyNameMin),
+  "email": zod.string().min(createAdminUserBodyEmailMin),
+  "password": zod.string().min(createAdminUserBodyPasswordMin),
+  "role": zod.enum(['admin', 'operator'])
+})
+
+export const CreateAdminUserResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "role": zod.enum(['admin', 'operator']),
+  "active": zod.boolean(),
+  "lastLoginAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a store team user
+ */
+
+
+
+export const UpdateAdminUserParams = zod.object({
+  "id": zod.coerce.number().min(1)
+})
+
+export const updateAdminUserBodyNameMin = 2;
+
+export const updateAdminUserBodyEmailMin = 3;
+
+export const updateAdminUserBodyPasswordMin = 8;
+
+
+
+export const UpdateAdminUserBody = zod.object({
+  "name": zod.string().min(updateAdminUserBodyNameMin).optional(),
+  "email": zod.string().min(updateAdminUserBodyEmailMin).optional(),
+  "password": zod.string().min(updateAdminUserBodyPasswordMin).optional(),
+  "role": zod.enum(['admin', 'operator']).optional(),
+  "active": zod.boolean().optional()
+})
+
+export const UpdateAdminUserResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "role": zod.enum(['admin', 'operator']),
+  "active": zod.boolean(),
+  "lastLoginAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List all orders for the store team
+ */
+export const ListAdminOrdersResponseItem = zod.object({
+  "id": zod.number(),
+  "customerName": zod.string(),
+  "customerEmail": zod.string(),
+  "status": zod.string(),
+  "subtotal": zod.number(),
+  "shipping": zod.number(),
+  "total": zod.number(),
+  "shippingOption": zod.object({
+  "id": zod.string(),
+  "carrier": zod.string(),
+  "service": zod.string(),
+  "price": zod.number(),
+  "deliveryDays": zod.number(),
+  "description": zod.string()
+}),
+  "items": zod.array(zod.object({
+  "productId": zod.number(),
+  "productName": zod.string(),
+  "quantity": zod.number(),
+  "unitPrice": zod.number(),
+  "total": zod.number()
+})),
+  "createdAt": zod.coerce.date()
+})
+export const ListAdminOrdersResponse = zod.array(ListAdminOrdersResponseItem)
 
 
