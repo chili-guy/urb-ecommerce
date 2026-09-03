@@ -10,9 +10,9 @@ export function TerabyteInspired() {
         </span>
         <div className="flex h-[250px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#fdfdfd] px-4 pt-4">
           <img
-            src="/__mockup/images/jurb-card-console.jpg"
+            src="/__mockup/images/jurb-card-console-transparent.png"
             alt="Console Core Station"
-            className="jurb-card-image h-[220px] w-full object-contain mix-blend-multiply"
+            className="jurb-card-image h-[220px] w-full object-contain"
           />
         </div>
 

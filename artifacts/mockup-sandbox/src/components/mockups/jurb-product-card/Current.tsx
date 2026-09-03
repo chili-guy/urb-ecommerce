@@ -10,9 +10,9 @@ export function Current() {
             Destaque
           </span>
           <img
-            src="/__mockup/images/jurb-card-console.jpg"
+            src="/__mockup/images/jurb-card-console-transparent.png"
             alt="Console Core Station"
-            className="h-full w-full object-contain mix-blend-multiply transition-transform duration-500 group-hover:scale-105"
+            className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-105"
           />
         </div>
 
