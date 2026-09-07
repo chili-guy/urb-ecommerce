@@ -21,11 +21,11 @@ export default function Home() {
         <div className="jurb-grid pointer-events-none absolute inset-0 opacity-40" />
         <div className="pointer-events-none absolute -right-32 -top-24 h-[380px] w-[380px] rounded-full bg-[#ff8a0a]/[.10] blur-3xl" />
         <div className="relative z-10 mx-auto grid max-w-[1320px] items-center gap-6 px-4 py-8 sm:gap-8 sm:px-8 md:py-11 lg:grid-cols-[1.08fr_.92fr] lg:gap-14 lg:px-12">
-          <div>
-            <div className="flex items-center gap-3 font-mono text-[10px] font-bold uppercase tracking-[.28em] text-[#ffb85d]">
+          <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
+            <div className="flex items-center justify-center gap-3 font-mono text-[10px] font-bold uppercase tracking-[.28em] text-[#ffb85d] lg:justify-start">
               <span className="h-2 w-2 bg-[#ff8a0a]" /> O padrão URB
             </div>
-            <h1 className="mt-4 max-w-[16ch] text-balance font-display text-[clamp(1.9rem,7vw,3.1rem)] font-semibold leading-[1.02] tracking-[-.035em] text-[#f4f1eb]">
+            <h1 className="mt-4 max-w-[18ch] text-balance font-display text-[clamp(1.9rem,7vw,3.1rem)] font-semibold leading-[1.02] tracking-[-.035em] text-[#f4f1eb] lg:max-w-[16ch]">
               Tecnologia boa é tecnologia que <span className="text-[#ff8a0a]">entrega.</span>
             </h1>
             <Link
