@@ -1,15 +1,14 @@
 /**
- * Seed do catálogo da loja — popula a tabela `products` com exemplos.
+ * Seed do catálogo da loja — popula a tabela `products` no Supabase.
  *
- * Uso:
- *   DATABASE_URL=postgres://... pnpm --filter @workspace/scripts run seed
+ * Uso (a service_role key ignora a RLS — nunca versione essa chave):
+ *   SUPABASE_URL=https://xxxx.supabase.co \
+ *   SUPABASE_SERVICE_ROLE_KEY=... \
+ *   pnpm --filter @workspace/scripts run seed
  *
- * O script é idempotente: se não houver itens de pedido registrados, ele limpa
- * a tabela `products` antes de inserir. Havendo pedidos, ele aborta para não
- * apagar dados reais.
+ * Idempotente: `on conflict (slug)` — reexecutar não duplica.
  */
-import { db, pool, productsTable, orderItemsTable } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { createClient } from "@supabase/supabase-js";
 
 type Seed = {
   name: string;
@@ -728,19 +727,16 @@ function slugify(value: string): string {
 }
 
 async function main() {
-  const [{ count: orderItemCount }] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(orderItemsTable);
-
-  if (orderItemCount > 0) {
-    console.error(
-      `Abortado: existem ${orderItemCount} itens de pedido no banco. ` +
-        "O seed só limpa a tabela de produtos quando não há pedidos registrados.",
-    );
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) {
+    console.error("Defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.");
     process.exit(1);
   }
 
-  await db.delete(productsTable);
+  const supabase = createClient(url, serviceKey, {
+    auth: { persistSession: false },
+  });
 
   const rows = PRODUCTS.map((p, index) => ({
     name: p.name,
@@ -748,32 +744,31 @@ async function main() {
     description: p.description,
     category: p.category,
     price: p.price,
-    compareAtPrice: p.compareAtPrice ?? null,
+    compare_at_price: p.compareAtPrice ?? null,
     stock: p.stock,
-    imageUrl: IMAGE(p.image),
+    image_url: IMAGE(p.image),
     featured: p.featured ?? false,
     rating: p.rating ?? 4.8,
-    reviewCount: p.reviewCount ?? 0,
+    review_count: p.reviewCount ?? 0,
   }));
 
-  const inserted = await db.insert(productsTable).values(rows).returning({
-    id: productsTable.id,
-  });
+  const { error } = await supabase
+    .from("products")
+    .upsert(rows, { onConflict: "slug", ignoreDuplicates: true });
+  if (error) {
+    console.error(error);
+    process.exit(1);
+  }
 
   const byCategory = rows.reduce<Record<string, number>>((acc, r) => {
     acc[r.category] = (acc[r.category] ?? 0) + 1;
     return acc;
   }, {});
-
-  console.log(`✓ ${inserted.length} produtos inseridos no catálogo.`);
-  console.log(`✓ ${rows.filter((r) => r.featured).length} em destaque.`);
+  console.log(`✓ ${rows.length} produtos enviados (novos inseridos, duplicados ignorados).`);
   console.table(byCategory);
-
-  await pool.end();
 }
 
-main().catch(async (err) => {
+main().catch((err) => {
   console.error(err);
-  await pool.end();
   process.exit(1);
 });

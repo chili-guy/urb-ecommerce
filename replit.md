@@ -1,58 +1,53 @@
-# Nexa Eletrônicos
+# URB Comércio de Eletrônicos
 
-Loja online de eletrônicos com catálogo, carrinho, checkout, área do cliente e painel administrativo.
+Loja online de eletrônicos: catálogo, carrinho, checkout, conta do cliente e
+painel administrativo. **Front-end estático + Supabase** — sem servidor próprio.
 
-## Run & Operate
+## Rodar
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
-- Required env: `SESSION_SECRET` — signs the HttpOnly administrative session cookie
-- Optional env: `ADMIN_BOOTSTRAP_SECRET` — one-time key for configuring the first administrator; when absent, `SESSION_SECRET` is used. Store it only in Replit Secrets.
+- `pnpm install`
+- `cp artifacts/web/.env.example artifacts/web/.env` e preencher `VITE_SUPABASE_URL`
+  e `VITE_SUPABASE_ANON_KEY` (Supabase → Project Settings → API)
+- `pnpm --filter @workspace/web run dev` — http://localhost:5173
+- `pnpm run typecheck` — checa web, scripts e mockup-sandbox
+- `pnpm run build` — build de produção do `web` (saída em `artifacts/web/dist/public`)
+
+Banco: rode `supabase/migrations/0001_init.sql` e `0002_create_order.sql` no SQL
+Editor do Supabase. Seed do catálogo: `pnpm --filter @workspace/scripts run seed`
+(precisa de `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`). Deploy: ver `DEPLOY.md`.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- pnpm workspaces, Node 22+, TypeScript 5.9
+- Front: Vite 7 + React 19 + Wouter + TanStack Query + Tailwind 4 + shadcn/ui
+- Dados/auth: Supabase (`@supabase/supabase-js`) — Postgres, Auth, RLS
+- Deploy: Vercel (estático) + Supabase
 
-## Where things live
+## Onde as coisas ficam
 
-- `artifacts/web/src/` — interface da loja, páginas, carrinho e painel administrativo
-- `artifacts/api-server/src/routes/store.ts` — catálogo, pedidos, frete, perfil e métricas
-- `lib/api-spec/openapi.yaml` — contrato fonte das rotas e tipos da aplicação
-- `lib/db/src/schema/` — tabelas de produtos, perfis, pedidos e itens de pedido
-- `artifacts/web/public/images/` — imagens originais dos produtos do catálogo inicial
+- `artifacts/web/src/lib/supabase.ts` — cliente único do Supabase
+- `artifacts/web/src/lib/api.ts` — hooks React Query sobre o Supabase (produtos,
+  perfil, pedidos, métricas via rpc, equipe/papéis)
+- `artifacts/web/src/lib/auth-context.tsx` — Supabase Auth + papéis (`user_roles`)
+- `artifacts/web/src/lib/shipping.ts` — cotação de frete simulada (client-side)
+- `artifacts/web/src/pages/` — Home, Catalog, ProductDetail, Cart, Checkout,
+  Account, Admin, e as telas de conta (Login/Register/Forgot/ResetPassword)
+- `supabase/migrations/` — schema, RLS, `create_order`, `admin_dashboard_summary`
+- `scripts/src/seed.ts` — seed do catálogo (55 produtos) via service_role key
+- `artifacts/mockup-sandbox/` — sandbox de design, fora do app da loja
 
-## Architecture decisions
+## Modelo de dados (Supabase)
 
-- O catálogo e os pedidos usam PostgreSQL com Drizzle para que alterações feitas no painel persistam após recarregar.
-- A cotação de frete é isolada em uma camada de opções; o fluxo atual funciona com cotações locais enquanto a conta de uma transportadora não é conectada.
-- A especificação OpenAPI permanece como fonte única para gerar os hooks React Query e os validadores do servidor.
+- `products` — catálogo. Leitura pública; escrita só para equipe (`is_staff()`).
+- `profiles` — 1 linha por conta, `id = auth.users.id`, criada por trigger no
+  cadastro. Cada um lê/edita a sua; equipe lê todas.
+- `user_roles` — `admin` / `operator`. Só `admin` gerencia. O 1º admin é
+  inserido à mão no SQL Editor.
+- `orders` / `order_items` — cliente vê os seus; equipe vê todos. Criados pela
+  função `create_order` (totais e baixa de estoque no servidor, atômico).
 
-## Product
+## Pendências
 
-- Navegação por destaques e catálogo com busca e categorias.
-- Detalhes do produto, carrinho local e checkout com opções de entrega.
-- Perfil editável e histórico de pedidos.
-- Painel administrativo com métricas e CRUD de produtos.
-- O primeiro administrador é configurado uma única vez em `/admin` com a chave de inicialização do ambiente; o app não cria credenciais padrão e não reabre essa etapa depois de concluída.
-
-## User preferences
-
-_Nenhuma preferência registrada._
-
-## Gotchas
-
-- Depois de alterar `lib/api-spec/openapi.yaml`, execute o codegen antes de usar os hooks atualizados.
-- O catálogo inicial depende dos arquivos em `artifacts/web/public/images/`.
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- SMTP para os e-mails do Supabase Auth
+- Gateway de pagamento (checkout finaliza sem cobrança)
+- Melhor Envio (frete real)

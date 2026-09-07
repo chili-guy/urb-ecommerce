@@ -1,59 +1,61 @@
-# Deploy na Vercel
+# Deploy
 
-Este repositório já está configurado para a Vercel via [`vercel.json`](./vercel.json):
+Arquitetura: **front-end estático (Vite/React) + Supabase** (Postgres + Auth +
+RLS). Não há servidor próprio — o navegador fala direto com o Supabase.
 
-| Parte | Como é servida |
-| --- | --- |
-| Loja (SPA React/Vite) | build estático em `artifacts/web/dist/public` |
-| API (`/api/*`) | função serverless única em [`api/[...slug].ts`](./api/%5B...slug%5D.ts), que reaproveita a app Express (`artifacts/api-server/src/app.ts`) |
-| Rotas do cliente (`/catalogo`, `/conta`, …) | rewrite para `index.html` (SPA) |
+```
+artifacts/web        SPA React (o app inteiro)
+supabase/migrations  schema + RLS + funções (rodar no SQL Editor)
+scripts              seed do catálogo via service_role key
+```
 
-## Pré-requisitos
+## 1. Supabase (uma vez)
 
-- **Banco Postgres com pooling** — em serverless cada instância abre poucas conexões. Use **Neon**, **Supabase** ou **Vercel Postgres** e pegue a *connection string com pooling* (PgBouncer). O `pool` já usa `max: 1` quando detecta a Vercel.
+1. Crie o projeto em https://supabase.com.
+2. **SQL Editor** → rode, nesta ordem, o conteúdo de:
+   - `supabase/migrations/0001_init.sql`
+   - `supabase/migrations/0002_create_order.sql`
+3. **Authentication → Sign In / Providers → Email**: em produção, deixe
+   *Confirm email* ligado (e configure um SMTP em *Project Settings → Auth*).
+   Em desenvolvimento pode desligar para agilizar.
+4. **Catálogo de exemplo** (opcional), do seu computador:
+   ```bash
+   SUPABASE_URL="https://xxxx.supabase.co" \
+   SUPABASE_SERVICE_ROLE_KEY="..." \
+   pnpm --filter @workspace/scripts run seed
+   ```
+   > A `service_role` key ignora a RLS — nunca versione nem exponha no front.
+5. **Primeiro admin**: cadastre-se no site, pegue seu UUID em
+   *Authentication → Users* e rode no SQL Editor:
+   ```sql
+   insert into public.user_roles (user_id, role) values ('<seu-uuid>', 'admin');
+   ```
 
-## Passo a passo
+## 2. Vercel
 
-1. **Importar o repo na Vercel**
-   - New Project → importe `chili-guy/urb-ecommerce`.
-   - Framework Preset: **Other** (a Vercel lê o `vercel.json`).
-   - Install Command / Build Command / Output: deixe em branco — vêm do `vercel.json`.
-   - Node.js Version (Project Settings → General): **22.x** (ou 24.x se disponível).
-
-2. **Variáveis de ambiente** (Project Settings → Environment Variables), em Production e Preview:
+1. New Project → importe `chili-guy/urb-ecommerce` → Framework **Other**
+   (a Vercel lê o `vercel.json`; build e output já vêm dele).
+2. **Environment Variables** (Production + Preview):
 
    | Nome | Valor |
    | --- | --- |
-   | `DATABASE_URL` | connection string do Postgres (com pooling) |
-   | `SESSION_SECRET` | string aleatória longa — assina os cookies de sessão |
-   | `APP_URL` | URL pública do site, ex. `https://urb-ecommerce.vercel.app` (usada nos links de redefinição de senha) |
-   | `ADMIN_BOOTSTRAP_SECRET` | *(opcional)* chave de uso único para criar o 1º admin em `/admin`; se ausente, usa `SESSION_SECRET` |
-   | `PG_POOL_MAX` | *(opcional)* sobrescreve o tamanho do pool (padrão 1 na Vercel) |
+   | `VITE_SUPABASE_URL` | URL do projeto Supabase |
+   | `VITE_SUPABASE_ANON_KEY` | a *anon/publishable* key (Project Settings → API) — pública por design |
 
-   `NODE_ENV=production` a Vercel já define sozinha (cookies passam a `secure`).
+3. Deploy. A cada push no `main` a Vercel rebuilda.
 
-3. **Criar o schema no banco de produção** (uma vez, do seu computador):
+## Rodar local
 
-   ```bash
-   DATABASE_URL="<sua connection string>" pnpm --filter @workspace/db run push
-   ```
-
-4. **(Opcional) Popular o catálogo de exemplo:**
-
-   ```bash
-   DATABASE_URL="<sua connection string>" pnpm --filter @workspace/scripts run seed
-   ```
-
-5. **Deploy** — a Vercel builda a cada push no `main`.
-
-6. **Primeiro administrador** — acesse `https://<seu-dominio>/admin` e configure com o `ADMIN_BOOTSTRAP_SECRET`. Essa etapa só acontece uma vez.
+```bash
+cp artifacts/web/.env.example artifacts/web/.env   # preencha as 2 variáveis
+pnpm install
+pnpm --filter @workspace/web run dev               # http://localhost:5173
+```
 
 ## Ainda pendente (não bloqueia o deploy)
 
-- **E-mail real:** os links de redefinição de senha só vão para o log da função ([`mailer.ts`](./artifacts/api-server/src/lib/mailer.ts)). Plugar Resend/SES/SMTP.
-- **Gateway de pagamento:** o checkout finaliza sem cobrança real.
-- **Frete real (Melhor Envio):** hoje usa cotação local simulada.
-
-## Alternativa
-
-Se a parte serverless der atrito (cold start, limites de conexão), **Railway** ou **Render** rodam o servidor Express como está (`artifacts/api-server`) + um serviço estático para a `artifacts/web`, sem precisar da função. O código não muda.
+- **SMTP** para os e-mails de confirmação/recuperação (hoje usa o mailer padrão
+  do Supabase, com limite baixo).
+- **Gateway de pagamento** — o checkout finaliza sem cobrança real.
+- **Frete real (Melhor Envio)** — `artifacts/web/src/lib/shipping.ts` usa
+  cotação local simulada.
