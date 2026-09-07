@@ -37,12 +37,12 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className="relative flex items-center justify-center py-2 lg:py-4">
-            <div className="pointer-events-none absolute left-1/2 top-1/2 h-[220px] w-[440px] max-w-full -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#ff8a0a]/[.14] blur-3xl" />
+          <div className="relative flex items-center justify-center py-1 sm:py-2 lg:py-4">
+            <div className="pointer-events-none absolute left-1/2 top-1/2 h-[40vw] max-h-[220px] w-[82vw] max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#ff8a0a]/[.14] blur-3xl" />
             <img
               src="/images/jurb-logo-full.png"
               alt="URB Comércio de Eletrônicos"
-              className="relative z-10 h-auto w-full max-w-[260px] drop-shadow-[0_10px_34px_rgba(0,0,0,0.4)] sm:max-w-[360px] lg:max-w-[440px]"
+              className="relative z-10 h-auto w-[56vw] max-w-[300px] drop-shadow-[0_10px_34px_rgba(0,0,0,0.4)] sm:w-full sm:max-w-[340px] lg:max-w-[440px]"
             />
           </div>
         </div>
