@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import type { Product } from '@workspace/api-client-react';
+import type { Product } from '@/lib/types';
 
 export interface CartItem {
   product: Product;

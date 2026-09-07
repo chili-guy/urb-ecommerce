@@ -1,10 +1,10 @@
-import { useListProducts } from "@workspace/api-client-react";
+import { useProducts } from "@/lib/api";
 import { ProductCard } from "@/components/ProductCard";
 import { Link } from "wouter";
 import { ArrowRight } from "lucide-react";
 
 export default function Home() {
-  const { data: featuredProducts, isLoading } = useListProducts({ featured: true, limit: 4 });
+  const { data: featuredProducts, isLoading } = useProducts({ featured: true, limit: 4 });
 
   return (
     <main className="min-h-screen bg-[#f4f1eb] text-[#111820]">

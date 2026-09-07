@@ -7,32 +7,31 @@ import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 
 export default function Login() {
-  const { customer, login } = useAuth();
+  const { user, signIn } = useAuth();
   const [, setLocation] = useLocation();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get("next") || "/conta";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
 
-  if (customer) {
+  if (user) {
     return <Redirect to={redirectTo} replace />;
   }
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    login.mutate(
-      { data: { email, password } },
-      {
-        onSuccess: () => {
-          toast.success("Bem-vindo de volta!");
-          setLocation(redirectTo, { replace: true });
-        },
-        onError: () => {
-          toast.error("E-mail ou senha inválidos");
-        },
-      },
-    );
+    setPending(true);
+    try {
+      await signIn(email, password);
+      toast.success("Bem-vindo de volta!");
+      setLocation(redirectTo, { replace: true });
+    } catch {
+      toast.error("E-mail ou senha inválidos");
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -80,9 +79,9 @@ export default function Login() {
         <Button
           type="submit"
           className="jurb-cta h-11 w-full text-sm font-bold uppercase tracking-[.1em]"
-          disabled={login.isPending}
+          disabled={pending}
         >
-          {login.isPending ? "Entrando..." : "Entrar"}
+          {pending ? "Entrando..." : "Entrar"}
         </Button>
       </form>
     </AuthShell>

@@ -4,44 +4,73 @@ import { AuthShell, AuthField } from "@/components/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
+import { MailCheck } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Register() {
-  const { customer, register } = useAuth();
+  const { user, signUp } = useAuth();
   const [, setLocation] = useLocation();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
 
-  if (customer) {
+  if (user) {
     return <Redirect to="/conta" replace />;
   }
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (password.length < 8) {
       toast.error("A senha precisa ter ao menos 8 caracteres");
       return;
     }
-    register.mutate(
-      { data: { name, email, password } },
-      {
-        onSuccess: () => {
-          toast.success("Conta criada!", { description: "Você já está logado." });
-          setLocation("/conta", { replace: true });
-        },
-        onError: (error) => {
-          const status = (error as { status?: number })?.status;
-          toast.error(
-            status === 409
-              ? "Já existe uma conta com este e-mail"
-              : "Não foi possível criar a conta",
-          );
-        },
-      },
-    );
+    setPending(true);
+    try {
+      const { needsConfirmation } = await signUp(name, email, password);
+      if (needsConfirmation) {
+        setSentTo(email);
+      } else {
+        toast.success("Conta criada!", { description: "Você já está logado." });
+        setLocation("/conta", { replace: true });
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "";
+      toast.error(
+        /registered|already/i.test(msg)
+          ? "Já existe uma conta com este e-mail"
+          : "Não foi possível criar a conta",
+      );
+    } finally {
+      setPending(false);
+    }
   };
+
+  if (sentTo) {
+    return (
+      <AuthShell
+        title="Confirme seu e-mail"
+        footer={
+          <Link href="/entrar" className="font-semibold text-[#e26f00] hover:underline">
+            Ir para entrar
+          </Link>
+        }
+      >
+        <div className="flex flex-col items-center gap-3 py-2 text-center">
+          <span className="grid h-12 w-12 place-items-center rounded-full bg-[#e8f5ec] text-[#267b4e]">
+            <MailCheck className="h-6 w-6" />
+          </span>
+          <p className="text-sm leading-6 text-[#4f585d]">
+            Enviamos um link de confirmação para{" "}
+            <strong className="text-[#111820]">{sentTo}</strong>. Confirme para
+            ativar sua conta.
+          </p>
+        </div>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell
@@ -91,9 +120,9 @@ export default function Register() {
         <Button
           type="submit"
           className="jurb-cta h-11 w-full text-sm font-bold uppercase tracking-[.1em]"
-          disabled={register.isPending}
+          disabled={pending}
         >
-          {register.isPending ? "Criando conta..." : "Criar conta"}
+          {pending ? "Criando conta..." : "Criar conta"}
         </Button>
       </form>
     </AuthShell>

@@ -1,6 +1,6 @@
 import { Link } from "wouter";
 import { formatCurrency } from "@/lib/utils";
-import type { Product } from "@workspace/api-client-react";
+import type { Product } from "@/lib/types";
 import { Rocket, ShoppingCart, Star } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 

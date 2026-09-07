@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListProducts } from "@workspace/api-client-react";
+import { useProducts } from "@/lib/api";
 import { ProductCard } from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Search, SlidersHorizontal, X } from "lucide-react";
@@ -16,7 +16,7 @@ export default function Catalog() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(initialCategory);
 
-  const { data: products, isLoading } = useListProducts({ 
+  const { data: products, isLoading } = useProducts({ 
     search: search || undefined,
     category: category !== "Todos" ? category : undefined
   });

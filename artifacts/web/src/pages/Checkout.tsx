@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useCart } from "@/lib/cart-context";
 import { useAuth } from "@/lib/auth-context";
+import { useProfile } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
-import { useGetShippingQuote, useCreateOrder } from "@workspace/api-client-react";
+import { useCreateOrder } from "@/lib/api";
+import { getShippingOptions } from "@/lib/shipping";
+import type { ShippingOption } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ShieldCheck, CheckCircle2 } from "lucide-react";
@@ -12,62 +15,67 @@ import { toast } from "sonner";
 export default function Checkout() {
   const { items, subtotal, clearCart } = useCart();
   const [, setLocation] = useLocation();
-  const { customer } = useAuth();
+  const { user } = useAuth();
+  const { data: profile } = useProfile(!!user);
 
-  const [postalCode, setPostalCode] = useState(customer?.postalCode ?? "");
-  const [name, setName] = useState(customer?.name ?? "");
-  const [email, setEmail] = useState(customer?.email ?? "");
+  const [postalCode, setPostalCode] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [selectedShipping, setSelectedShipping] = useState<string>("");
   const [orderComplete, setOrderComplete] = useState<number | null>(null);
 
-  // O cliente pode chegar depois da montagem — preenche os campos ainda vazios.
+  // Pré-preenche com os dados do cliente logado (podem chegar após a montagem).
   useEffect(() => {
-    if (!customer) return;
-    setName((v) => v || customer.name);
-    setEmail((v) => v || customer.email);
-    setPostalCode((v) => v || customer.postalCode || "");
-  }, [customer]);
+    if (user) {
+      setName((v) => v || user.name);
+      setEmail((v) => v || user.email || "");
+    }
+  }, [user]);
+  useEffect(() => {
+    if (profile) setPostalCode((v) => v || profile.postalCode || "");
+  }, [profile]);
 
-  const getShippingQuote = useGetShippingQuote();
   const createOrder = useCreateOrder();
 
   const handleCalculateShipping = () => {
-    if (postalCode.length < 8) {
+    if (postalCode.replace(/\D/g, "").length < 8) {
       toast.error("CEP inválido");
       return;
     }
-    
-    getShippingQuote.mutate({
-      data: {
-        postalCode,
-        items: items.map(i => ({ productId: i.product.id, quantity: i.quantity }))
-      }
-    });
+    const count = items.reduce((n, i) => n + i.quantity, 0);
+    const options = getShippingOptions(count, postalCode);
+    setShippingOptions(options);
+    setSelectedShipping((cur) => cur || options[0]?.id || "");
   };
 
   const handleCheckout = () => {
-    if (!name || !email || !selectedShipping) {
+    const option = shippingOptions.find((o) => o.id === selectedShipping);
+    if (!name || !email || !option) {
       toast.error("Preencha todos os campos e selecione o frete.");
       return;
     }
 
-    createOrder.mutate({
-      data: {
+    createOrder.mutate(
+      {
         customerName: name,
         customerEmail: email,
         postalCode,
-        shippingOptionId: selectedShipping,
-        items: items.map(i => ({ productId: i.product.id, quantity: i.quantity }))
-      }
-    }, {
-      onSuccess: (order) => {
-        setOrderComplete(order.id);
-        clearCart();
+        shippingOption: option,
+        items: items.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
       },
-      onError: () => {
-        toast.error("Erro ao processar pedido. Tente novamente.");
-      }
-    });
+      {
+        onSuccess: (order) => {
+          setOrderComplete(order.id);
+          clearCart();
+        },
+        onError: (error) => {
+          toast.error(
+            error instanceof Error ? error.message : "Erro ao processar pedido.",
+          );
+        },
+      },
+    );
   };
 
   if (orderComplete) {
@@ -101,7 +109,6 @@ export default function Checkout() {
     );
   }
 
-  const shippingOptions = getShippingQuote.data || [];
   const selectedOption = shippingOptions.find(o => o.id === selectedShipping);
   const total = subtotal + (selectedOption?.price || 0);
 
@@ -147,7 +154,7 @@ export default function Checkout() {
                 </div>
                 <Button 
                   onClick={handleCalculateShipping} 
-                  disabled={getShippingQuote.isPending}
+                  disabled={items.length === 0}
                   variant="secondary"
                 >
                   Calcular

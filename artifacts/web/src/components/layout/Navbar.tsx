@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Package,
   LogOut,
+  LayoutDashboard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +24,7 @@ import {
 import { toast } from "sonner";
 
 function AccountMenu() {
-  const { customer, isLoading, logout } = useAuth();
+  const { user, isLoading, isStaff, signOut } = useAuth();
   const [, setLocation] = useLocation();
 
   if (isLoading) {
@@ -40,7 +41,7 @@ function AccountMenu() {
     );
   }
 
-  if (!customer) {
+  if (!user) {
     return (
       <Button
         variant="ghost"
@@ -55,7 +56,7 @@ function AccountMenu() {
     );
   }
 
-  const firstName = customer.name.split(" ")[0];
+  const firstName = user.name.split(" ")[0];
 
   return (
     <DropdownMenu>
@@ -73,7 +74,7 @@ function AccountMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="truncate font-normal text-muted-foreground">
-          {customer.email}
+          {user.email}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
@@ -86,10 +87,17 @@ function AccountMenu() {
             <Package className="mr-2 h-4 w-4" /> Meus pedidos
           </Link>
         </DropdownMenuItem>
+        {isStaff && (
+          <DropdownMenuItem asChild>
+            <Link href="/admin">
+              <LayoutDashboard className="mr-2 h-4 w-4" /> Painel
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={async () => {
-            await logout();
+            await signOut();
             toast.success("Você saiu da sua conta");
             setLocation("/");
           }}

@@ -1,13 +1,6 @@
 import { useState } from "react";
 import { Redirect, useSearchParams } from "wouter";
-import {
-  useGetProfile,
-  useUpdateProfile,
-  useListOrders,
-  useGetOrder,
-  getGetProfileQueryKey,
-  getListOrdersQueryKey,
-} from "@workspace/api-client-react";
+import { useProfile, useUpdateProfile, useMyOrders, useOrder } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -16,7 +9,7 @@ import { Package, User, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 
 function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () => void }) {
-  const { data: order, isLoading } = useGetOrder(orderId, { query: { enabled: !!orderId, queryKey: ['order', orderId] } });
+  const { data: order, isLoading } = useOrder(orderId);
 
   if (isLoading) {
     return (
@@ -88,14 +81,10 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () =
 }
 
 export default function Account() {
-  const { customer, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const [searchParams] = useSearchParams();
-  const { data: profile, isLoading: profileLoading } = useGetProfile({
-    query: { queryKey: getGetProfileQueryKey(), enabled: !!customer, retry: false },
-  });
-  const { data: orders, isLoading: ordersLoading } = useListOrders(undefined, {
-    query: { queryKey: getListOrdersQueryKey(), enabled: !!customer },
-  });
+  const { data: profile, isLoading: profileLoading } = useProfile(!!user);
+  const { data: orders, isLoading: ordersLoading } = useMyOrders(!!user);
 
   const [activeTab, setActiveTab] = useState<"orders" | "profile">(
     searchParams.get("tab") === "profile" ? "profile" : "orders",
@@ -114,7 +103,7 @@ export default function Account() {
   // Initialize form when profile loads
   if (profile && !name && !isEditing) {
     setName(profile.name);
-    setEmail(profile.email);
+    setEmail(profile.email ?? user?.email ?? "");
     setPhone(profile.phone ?? "");
     setPostalCode(profile.postalCode ?? "");
     setCity(profile.city ?? "");
@@ -122,21 +111,23 @@ export default function Account() {
   }
 
   const handleSaveProfile = () => {
-    updateProfile.mutate({
-      data: { name, email, phone, postalCode, city, state }
-    }, {
-      onSuccess: () => {
-        toast.success("Perfil atualizado com sucesso!");
-        setIsEditing(false);
-      }
-    });
+    updateProfile.mutate(
+      { name, email, phone, postalCode, city, state },
+      {
+        onSuccess: () => {
+          toast.success("Perfil atualizado com sucesso!");
+          setIsEditing(false);
+        },
+        onError: () => toast.error("Não foi possível salvar."),
+      },
+    );
   };
 
   if (authLoading) {
     return <div className="container mx-auto px-4 py-24 text-center animate-pulse">Carregando...</div>;
   }
 
-  if (!customer) {
+  if (!user) {
     return <Redirect to="/entrar?next=/conta" replace />;
   }
 

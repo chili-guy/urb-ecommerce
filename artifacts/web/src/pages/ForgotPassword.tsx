@@ -3,20 +3,26 @@ import { Link } from "wouter";
 import { AuthShell, AuthField } from "@/components/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useRequestPasswordReset } from "@workspace/api-client-react";
+import { useAuth } from "@/lib/auth-context";
 import { MailCheck } from "lucide-react";
 
 export default function ForgotPassword() {
-  const requestReset = useRequestPasswordReset();
+  const { requestPasswordReset } = useAuth();
   const [email, setEmail] = useState("");
+  const [pending, setPending] = useState(false);
   const [sent, setSent] = useState(false);
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    requestReset.mutate(
-      { data: { email } },
-      { onSettled: () => setSent(true) },
-    );
+    setPending(true);
+    try {
+      await requestPasswordReset(email);
+    } catch {
+      // resposta idêntica exista ou não a conta — não vaza cadastro
+    } finally {
+      setPending(false);
+      setSent(true);
+    }
   };
 
   if (sent) {
@@ -34,8 +40,9 @@ export default function ForgotPassword() {
             <MailCheck className="h-6 w-6" />
           </span>
           <p className="text-sm leading-6 text-[#4f585d]">
-            Se houver uma conta para <strong className="text-[#111820]">{email}</strong>, enviamos
-            um link para redefinir a senha. Ele vale por 1 hora.
+            Se houver uma conta para{" "}
+            <strong className="text-[#111820]">{email}</strong>, enviamos um link
+            para redefinir a senha.
           </p>
         </div>
       </AuthShell>
@@ -66,9 +73,9 @@ export default function ForgotPassword() {
         <Button
           type="submit"
           className="jurb-cta h-11 w-full text-sm font-bold uppercase tracking-[.1em]"
-          disabled={requestReset.isPending}
+          disabled={pending}
         >
-          {requestReset.isPending ? "Enviando..." : "Enviar link"}
+          {pending ? "Enviando..." : "Enviar link"}
         </Button>
       </form>
     </AuthShell>

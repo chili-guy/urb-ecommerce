@@ -1,30 +1,39 @@
 import { useState } from "react";
-import { Link, Redirect, useLocation, useSearchParams } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
 import { AuthShell, AuthField } from "@/components/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  getGetCustomerSessionQueryKey,
-  useResetPassword,
-} from "@workspace/api-client-react";
+import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 
 export default function ResetPassword() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get("token") ?? "";
+  const { user, isLoading, updatePassword } = useAuth();
   const [, setLocation] = useLocation();
-  const queryClient = useQueryClient();
-  const resetPassword = useResetPassword();
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [pending, setPending] = useState(false);
 
-  if (!token) {
-    return <Redirect to="/esqueci-senha" replace />;
+  // O link do e-mail estabelece uma sessão de recuperação (detectSessionInUrl).
+  if (!isLoading && !user) {
+    return (
+      <AuthShell
+        title="Link inválido ou expirado"
+        footer={
+          <Link href="/esqueci-senha" className="font-semibold text-[#e26f00] hover:underline">
+            Pedir um novo link
+          </Link>
+        }
+      >
+        <p className="text-sm leading-6 text-[#4f585d]">
+          Abra esta página pelo link que enviamos por e-mail. Se já passou de
+          uma hora, solicite um novo.
+        </p>
+      </AuthShell>
+    );
   }
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (password.length < 8) {
       toast.error("A senha precisa ter ao menos 8 caracteres");
@@ -34,21 +43,18 @@ export default function ResetPassword() {
       toast.error("As senhas não coincidem");
       return;
     }
-    resetPassword.mutate(
-      { data: { token, password } },
-      {
-        onSuccess: (session) => {
-          queryClient.setQueryData(getGetCustomerSessionQueryKey(), session);
-          toast.success("Senha redefinida!", { description: "Você já está logado." });
-          setLocation("/conta", { replace: true });
-        },
-        onError: () => {
-          toast.error("Link inválido ou expirado", {
-            description: "Solicite um novo link de redefinição.",
-          });
-        },
-      },
-    );
+    setPending(true);
+    try {
+      await updatePassword(password);
+      toast.success("Senha redefinida!", { description: "Você já está logado." });
+      setLocation("/conta", { replace: true });
+    } catch {
+      toast.error("Não foi possível redefinir a senha", {
+        description: "O link pode ter expirado. Solicite um novo.",
+      });
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -87,9 +93,9 @@ export default function ResetPassword() {
         <Button
           type="submit"
           className="jurb-cta h-11 w-full text-sm font-bold uppercase tracking-[.1em]"
-          disabled={resetPassword.isPending}
+          disabled={pending}
         >
-          {resetPassword.isPending ? "Salvando..." : "Redefinir senha"}
+          {pending ? "Salvando..." : "Redefinir senha"}
         </Button>
       </form>
     </AuthShell>

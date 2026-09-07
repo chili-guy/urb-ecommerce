@@ -1,5 +1,5 @@
 import { useParams, Link } from "wouter";
-import { useGetProduct } from "@workspace/api-client-react";
+import { useProduct } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { useCart } from "@/lib/cart-context";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { toast } from "sonner";
 
 export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
-  const { data: product, isLoading, isError } = useGetProduct(Number(id), { query: { enabled: !!id, queryKey: ['product', id] } });
+  const { data: product, isLoading, isError } = useProduct(Number(id), { enabled: !!id });
   const { addItem } = useCart();
   const [quantity, setQuantity] = useState(1);
 
