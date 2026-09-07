@@ -17,8 +17,9 @@ export function Footer() {
           <div>
             <h4 className="font-display font-semibold mb-4">Produtos</h4>
              <ul className="space-y-2 text-sm text-[#4f585d]">
-              <li><Link href="/catalogo" className="hover:text-primary">Todos os Produtos</Link></li>
-              <li><Link href="/catalogo?category=Laptops" className="hover:text-primary">Notebooks</Link></li>
+              <li><Link href="/catalogo" className="hover:text-[#e26f00]">Todos os Produtos</Link></li>
+              <li><Link href="/ofertas" className="hover:text-[#e26f00]">Oferta da semana</Link></li>
+              <li><Link href="/catalogo?category=Laptops" className="hover:text-[#e26f00]">Notebooks</Link></li>
                <li><Link href="/catalogo?category=%C3%81udio" className="hover:text-[#e26f00]">Áudio Profissional</Link></li>
                <li><Link href="/catalogo?category=Acess%C3%B3rios" className="hover:text-[#e26f00]">Acessórios</Link></li>
             </ul>
@@ -34,9 +35,11 @@ export function Footer() {
           </div>
 
           <div>
-            <h4 className="font-display font-semibold mb-4">Administração</h4>
+            <h4 className="font-display font-semibold mb-4">A UR3</h4>
              <ul className="space-y-2 text-sm text-[#4f585d]">
-              <li><Link href="/admin" className="hover:text-primary">Painel de Controle</Link></li>
+              <li><Link href="/por-que-ur3" className="hover:text-[#e26f00]">Por que a UR3</Link></li>
+              <li><Link href="/ofertas" className="hover:text-[#e26f00]">Oferta da semana</Link></li>
+              <li><Link href="/admin" className="hover:text-[#e26f00]">Painel de Controle</Link></li>
             </ul>
           </div>
         </div>

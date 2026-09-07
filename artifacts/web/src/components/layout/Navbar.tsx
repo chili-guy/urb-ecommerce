@@ -32,8 +32,8 @@ import { toast } from "sonner";
 
 const NAV_LINKS = [
   { href: "/#destaques", label: "Destaques" },
-  { href: "/#por-que-jurb", label: "Por que UR3" },
-  { href: "/#oferta", label: "Oferta da semana" },
+  { href: "/por-que-ur3", label: "Por que UR3" },
+  { href: "/ofertas", label: "Oferta da semana" },
 ];
 
 function AccountMenu() {
