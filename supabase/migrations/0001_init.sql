@@ -1,5 +1,5 @@
 -- =============================================================================
--- URB — schema unificado no Supabase (Postgres + Auth + RLS)
+-- UR3 — schema unificado no Supabase (Postgres + Auth + RLS)
 -- Cole este arquivo inteiro no SQL Editor do Supabase e rode uma vez.
 -- Substitui todo o servidor Express: o front fala direto com o banco.
 -- =============================================================================

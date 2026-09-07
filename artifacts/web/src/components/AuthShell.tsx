@@ -21,11 +21,11 @@ export function AuthShell({
       <Link
         href="/"
         className="mb-8 flex items-center justify-center"
-        aria-label="URB — início"
+        aria-label="UR3 — início"
       >
         <img
           src="/images/jurb-logo-mark.png"
-          alt="URB"
+          alt="UR3"
           className="h-12 w-12 object-contain"
         />
       </Link>

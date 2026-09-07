@@ -1,4 +1,4 @@
-# URB Comércio de Eletrônicos
+# UR3 Comércio de Eletrônicos
 
 Loja online de eletrônicos: catálogo, carrinho, checkout, conta do cliente e
 painel administrativo. **Front-end estático + Supabase** — sem servidor próprio.

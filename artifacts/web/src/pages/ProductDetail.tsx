@@ -139,7 +139,7 @@ export default function ProductDetail() {
             <div className="grid grid-cols-1 gap-3 pt-4 sm:grid-cols-2 sm:gap-4">
               <div className="flex gap-3 text-sm text-muted-foreground">
                 <ShieldCheck className="h-5 w-5 shrink-0 text-primary" />
-                <span>Garantia de 12 meses direto com a URB.</span>
+                <span>Garantia de 12 meses direto com a UR3.</span>
               </div>
               <div className="flex gap-3 text-sm text-muted-foreground">
                 <Truck className="h-5 w-5 shrink-0 text-primary" />

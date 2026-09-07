@@ -7,7 +7,7 @@ export function Footer() {
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
           <div className="col-span-2 space-y-4 md:col-span-1">
             <Link href="/" className="flex items-center">
-              <img src="/images/jurb-logo-full.png" alt="URB Comércio de Eletrônicos" className="w-[140px]" />
+              <img src="/images/jurb-logo-full.png" alt="UR3 Comércio de Eletrônicos" className="w-[140px]" />
             </Link>
             <p className="text-sm text-[#4f585d]">
               Curadoria técnica de eletrônicos. Equipamentos selecionados para quem exige o melhor desempenho.
@@ -42,7 +42,7 @@ export function Footer() {
         </div>
         
          <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-[#111820]/15 pt-8 text-xs text-[#4f585d] md:flex-row">
-           <p>© {new Date().getFullYear()} URB Comércio de Eletrônicos. Todos os direitos reservados.</p>
+           <p>© {new Date().getFullYear()} UR3 Comércio de Eletrônicos. Todos os direitos reservados.</p>
           <div className="flex gap-4">
             <span>Privacidade</span>
             <span>Termos de Uso</span>

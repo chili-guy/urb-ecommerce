@@ -156,7 +156,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
             <div className="bg-primary text-primary-foreground p-1.5 rounded-md">
               <Box className="h-5 w-5" />
             </div>
-            URB
+            UR3
           </h2>
           <div className="flex items-center gap-2 mt-3 text-xs font-mono text-muted-foreground">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />

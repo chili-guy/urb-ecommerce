@@ -29,8 +29,8 @@ export function getShippingOptions(
       description: "Entrega expressa com rastreio",
     },
     {
-      id: "urb-express",
-      carrier: "URB Entregas",
+      id: "ur3-express",
+      carrier: "UR3 Entregas",
       service: "Express",
       price: Number((standard * 2.12).toFixed(2)),
       deliveryDays: 1,

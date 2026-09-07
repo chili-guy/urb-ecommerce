@@ -23,7 +23,7 @@ export default function Home() {
         <div className="relative z-10 mx-auto grid max-w-[1320px] items-center gap-6 px-4 py-8 sm:gap-8 sm:px-8 md:py-11 lg:grid-cols-[1.08fr_.92fr] lg:gap-14 lg:px-12">
           <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
             <div className="flex items-center justify-center gap-3 font-mono text-[10px] font-bold uppercase tracking-[.28em] text-[#ffb85d] lg:justify-start">
-              <span className="h-2 w-2 bg-[#ff8a0a]" /> O padrão URB
+              <span className="h-2 w-2 bg-[#ff8a0a]" /> O padrão UR3
             </div>
             <h1 className="mt-4 max-w-[18ch] text-balance font-display text-[clamp(1.9rem,7vw,3.1rem)] font-semibold leading-[1.02] tracking-[-.035em] text-[#f4f1eb] lg:max-w-[16ch]">
               Tecnologia boa é tecnologia que <span className="text-[#ff8a0a]">entrega.</span>
@@ -41,7 +41,7 @@ export default function Home() {
             <div className="pointer-events-none absolute left-1/2 top-1/2 h-[40vw] max-h-[220px] w-[82vw] max-w-[440px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#ff8a0a]/[.14] blur-3xl" />
             <img
               src="/images/jurb-logo-full.png"
-              alt="URB Comércio de Eletrônicos"
+              alt="UR3 Comércio de Eletrônicos"
               className="relative z-10 h-auto w-[56vw] max-w-[300px] drop-shadow-[0_10px_34px_rgba(0,0,0,0.4)] sm:w-full sm:max-w-[340px] lg:max-w-[440px]"
             />
           </div>

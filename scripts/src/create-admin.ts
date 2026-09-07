@@ -5,7 +5,7 @@
  *
  *   SUPABASE_URL=https://xxxx.supabase.co \
  *   SUPABASE_SERVICE_ROLE_KEY=... \
- *   pnpm --filter @workspace/scripts run create-admin -- admin@urb.com.br "senhaForte123" "Admin URB"
+ *   pnpm --filter @workspace/scripts run create-admin -- admin@urb.com.br "senhaForte123" "Admin UR3"
  *
  * Ou via env: ADMIN_EMAIL / ADMIN_PASSWORD / ADMIN_NAME.
  * Passe `operator` como 4º argumento para conceder o papel de operador.

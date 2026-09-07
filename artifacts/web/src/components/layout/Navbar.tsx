@@ -32,7 +32,7 @@ import { toast } from "sonner";
 
 const NAV_LINKS = [
   { href: "/#destaques", label: "Destaques" },
-  { href: "/#por-que-jurb", label: "Por que URB" },
+  { href: "/#por-que-jurb", label: "Por que UR3" },
   { href: "/#oferta", label: "Oferta da semana" },
 ];
 
@@ -140,7 +140,7 @@ function MobileMenu() {
         <div className="flex h-full flex-col">
           <div className="flex items-center gap-3 border-b border-[#f4f1eb]/10 p-5">
             <img src="/images/jurb-logo-mark.png" alt="" className="h-9 w-9 object-contain" />
-            <span className="font-display text-lg font-semibold tracking-tight">URB</span>
+            <span className="font-display text-lg font-semibold tracking-tight">UR3</span>
           </div>
 
           <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
@@ -208,11 +208,11 @@ export function Navbar() {
           <Link
             href="/"
             className="group flex items-center"
-            aria-label="URB Comércio de Eletrônicos — início"
+            aria-label="UR3 Comércio de Eletrônicos — início"
           >
             <img
               src="/images/jurb-logo-mark.png"
-              alt="URB Comércio de Eletrônicos"
+              alt="UR3 Comércio de Eletrônicos"
               className="h-9 w-9 object-contain transition-opacity group-hover:opacity-85 sm:h-11 sm:w-11"
             />
           </Link>

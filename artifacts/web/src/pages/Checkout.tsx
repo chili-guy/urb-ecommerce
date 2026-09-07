@@ -86,7 +86,7 @@ export default function Checkout() {
         </div>
         <h1 className="font-display text-3xl font-bold mb-4">Pedido Confirmado!</h1>
         <p className="text-muted-foreground mb-2">
-          Obrigado por comprar na URB. Seu pedido #{orderComplete} foi recebido.
+          Obrigado por comprar na UR3. Seu pedido #{orderComplete} foi recebido.
         </p>
         <p className="text-muted-foreground mb-8">
           Enviamos um email de confirmação para {email}.
