@@ -25,6 +25,7 @@ type AuthContextValue = {
   isStaff: boolean;
   isAdmin: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signUp: (
     name: string,
     email: string,
@@ -40,8 +41,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 function toUser(session: Session | null): AuthUser | null {
   const u = session?.user;
   if (!u) return null;
+  const meta = u.user_metadata ?? {};
   const metaName =
-    (u.user_metadata?.name as string | undefined)?.trim() || undefined;
+    ((meta.name ?? meta.full_name) as string | undefined)?.trim() || undefined;
   return {
     id: u.id,
     email: u.email ?? null,
@@ -91,6 +93,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }, []);
 
+  const signInWithGoogle = useCallback(async () => {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next") || "/conta";
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}${next}` },
+    });
+    if (error) throw error;
+  }, []);
+
   const signUp = useCallback(
     async (name: string, email: string, password: string) => {
       const { data, error } = await supabase.auth.signUp({
@@ -131,6 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isStaff: roles.length > 0,
     isAdmin: roles.includes("admin"),
     signIn,
+    signInWithGoogle,
     signUp,
     signOut,
     requestPasswordReset,

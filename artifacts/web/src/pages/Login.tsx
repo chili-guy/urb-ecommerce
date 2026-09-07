@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
-import { AuthShell, AuthField } from "@/components/AuthShell";
+import { AuthShell, AuthField, AuthDivider, GoogleButton } from "@/components/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 
 export default function Login() {
-  const { user, signIn } = useAuth();
+  const { user, signIn, signInWithGoogle } = useAuth();
   const [, setLocation] = useLocation();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get("next") || "/conta";
@@ -15,6 +15,17 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
+  const [googlePending, setGooglePending] = useState(false);
+
+  const handleGoogle = async () => {
+    setGooglePending(true);
+    try {
+      await signInWithGoogle();
+    } catch {
+      toast.error("Não foi possível iniciar o login com Google");
+      setGooglePending(false);
+    }
+  };
 
   if (user) {
     return <Redirect to={redirectTo} replace />;
@@ -47,6 +58,9 @@ export default function Login() {
         </>
       }
     >
+      <GoogleButton onClick={handleGoogle} disabled={googlePending} />
+      <AuthDivider>ou</AuthDivider>
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <AuthField label="E-mail">
           <Input

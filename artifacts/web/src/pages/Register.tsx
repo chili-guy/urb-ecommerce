@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, Redirect, useLocation } from "wouter";
-import { AuthShell, AuthField } from "@/components/AuthShell";
+import { AuthShell, AuthField, AuthDivider, GoogleButton } from "@/components/AuthShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
@@ -8,14 +8,25 @@ import { MailCheck } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Register() {
-  const { user, signUp } = useAuth();
+  const { user, signUp, signInWithGoogle } = useAuth();
   const [, setLocation] = useLocation();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
+  const [googlePending, setGooglePending] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
+
+  const handleGoogle = async () => {
+    setGooglePending(true);
+    try {
+      await signInWithGoogle();
+    } catch {
+      toast.error("Não foi possível iniciar o login com Google");
+      setGooglePending(false);
+    }
+  };
 
   if (user) {
     return <Redirect to="/conta" replace />;
@@ -85,6 +96,9 @@ export default function Register() {
         </>
       }
     >
+      <GoogleButton onClick={handleGoogle} disabled={googlePending} label="Cadastrar com Google" />
+      <AuthDivider>ou</AuthDivider>
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <AuthField label="Nome completo">
           <Input
