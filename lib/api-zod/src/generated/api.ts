@@ -345,10 +345,10 @@ export const GetProfileResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
-  "phone": zod.string(),
-  "postalCode": zod.string(),
-  "city": zod.string(),
-  "state": zod.string()
+  "phone": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "state": zod.string().nullish()
 })
 
 
@@ -362,20 +362,143 @@ export const updateProfileBodyNameMin = 2;
 export const UpdateProfileBody = zod.object({
   "name": zod.string().min(updateProfileBodyNameMin),
   "email": zod.string(),
-  "phone": zod.string(),
-  "postalCode": zod.string(),
-  "city": zod.string(),
-  "state": zod.string()
+  "phone": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "state": zod.string().nullish()
 })
 
 export const UpdateProfileResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
-  "phone": zod.string(),
-  "postalCode": zod.string(),
-  "city": zod.string(),
-  "state": zod.string()
+  "phone": zod.string().nullish(),
+  "postalCode": zod.string().nullish(),
+  "city": zod.string().nullish(),
+  "state": zod.string().nullish()
+})
+
+
+/**
+ * @summary Create a customer account
+ */
+export const registerCustomerBodyNameMin = 2;
+
+export const registerCustomerBodyEmailMin = 5;
+
+export const registerCustomerBodyPasswordMin = 8;
+
+
+
+export const RegisterCustomerBody = zod.object({
+  "name": zod.string().min(registerCustomerBodyNameMin),
+  "email": zod.string().min(registerCustomerBodyEmailMin),
+  "password": zod.string().min(registerCustomerBodyPasswordMin)
+})
+
+export const RegisterCustomerResponse = zod.object({
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullable(),
+  "postalCode": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Sign in to a customer account
+ */
+export const loginCustomerBodyEmailMin = 5;
+
+
+
+
+export const LoginCustomerBody = zod.object({
+  "email": zod.string().min(loginCustomerBodyEmailMin),
+  "password": zod.string().min(1)
+})
+
+export const LoginCustomerResponse = zod.object({
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullable(),
+  "postalCode": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Sign out of a customer account
+ */
+export const LogoutCustomerResponse = zod.void()
+
+
+/**
+ * @summary Get the current customer session
+ */
+export const GetCustomerSessionResponse = zod.object({
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullable(),
+  "postalCode": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+})
+
+
+/**
+ * @summary Request a password reset link by e-mail
+ */
+export const requestPasswordResetBodyEmailMin = 5;
+
+
+
+export const RequestPasswordResetBody = zod.object({
+  "email": zod.string().min(requestPasswordResetBodyEmailMin)
+})
+
+export const RequestPasswordResetResponse = zod.void()
+
+
+/**
+ * @summary Set a new password using a reset token
+ */
+export const resetPasswordBodyTokenMin = 10;
+
+export const resetPasswordBodyPasswordMin = 8;
+
+
+
+export const ResetPasswordBody = zod.object({
+  "token": zod.string().min(resetPasswordBodyTokenMin),
+  "password": zod.string().min(resetPasswordBodyPasswordMin)
+})
+
+export const ResetPasswordResponse = zod.object({
+  "user": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullable(),
+  "postalCode": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "state": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
 })
 
 

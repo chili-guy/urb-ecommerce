@@ -1,81 +1,45 @@
 import { useListProducts } from "@workspace/api-client-react";
 import { ProductCard } from "@/components/ProductCard";
 import { Link } from "wouter";
-import { ArrowRight, Check, ShieldCheck, Truck, Zap } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 export default function Home() {
   const { data: featuredProducts, isLoading } = useListProducts({ featured: true, limit: 4 });
 
   return (
     <main className="min-h-screen bg-[#f4f1eb] text-[#111820]">
-      <section className="relative isolate overflow-hidden bg-[#111820] text-[#f4f1eb]">
-        <div className="jurb-grid pointer-events-none absolute inset-0 opacity-70" />
-        <div className="pointer-events-none absolute -right-40 top-0 h-[620px] w-[620px] rounded-full bg-[#ff8a0a]/[.08] blur-3xl" />
-        <div className="relative z-10 mx-auto grid max-w-[1320px] items-center gap-12 px-5 pb-16 pt-14 sm:px-8 md:pb-24 md:pt-20 lg:grid-cols-[.88fr_1.12fr] lg:gap-16 lg:px-12 lg:pt-24">
-          <div className="max-w-[620px]">
-            <div className="mb-7 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[.24em] text-[#ffb85d]">
-              <span className="h-px w-9 bg-[#ff8a0a]" /> Seleção especial
-            </div>
-            <h1 className="max-w-[650px] font-display text-[clamp(3.2rem,7.5vw,7.7rem)] font-semibold leading-[.88] tracking-[-.065em] text-[#f4f1eb]">
-              O futuro<br /><span className="text-[#ff8a0a]">na sua mesa.</span>
-            </h1>
-            <p className="mt-8 max-w-[510px] text-base leading-7 text-[#c4c8c9] sm:text-lg">
-              Equipamentos de alta performance, escolhidos por quem entende de tecnologia — para o seu trabalho, seu jogo e tudo que vem depois.
-            </p>
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-              <Link className="jurb-cta group inline-flex min-h-14 items-center justify-center gap-4 bg-[#ff8a0a] px-7 text-sm font-bold uppercase tracking-[.12em] text-[#111820]" href="/catalogo">
-                Explorar catálogo <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-              </Link>
-              <Link className="jurb-cta inline-flex min-h-14 items-center justify-center border border-[#f4f1eb]/30 px-7 text-sm font-bold uppercase tracking-[.12em] text-[#f4f1eb] hover:border-[#ff8a0a] hover:bg-[#ff8a0a] hover:text-[#111820]" href="/catalogo?category=Laptops">
-                Ver notebooks
-              </Link>
-            </div>
-            <div className="mt-9 flex flex-wrap gap-x-6 gap-y-2 text-[10px] font-bold uppercase tracking-[.15em] text-[#92999d]">
-              <span className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-[#ff8a0a]" /> 12x sem juros</span>
-              <span className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-[#ff8a0a]" /> Garantia JURB</span>
-              <span className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-[#ff8a0a]" /> Envio rastreado</span>
-            </div>
-          </div>
-
-          <div id="oferta" className="relative min-h-[430px] overflow-hidden border border-[#f4f1eb]/15 bg-[#07101a] sm:min-h-[560px] lg:min-h-[630px]">
-            <img className="jurb-product absolute inset-0 h-full w-full object-cover object-center opacity-90" src="/images/hero-nexa.jpg" alt="Notebook e acessórios em um setup de alta performance" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#07101a] via-[#07101a]/10 to-transparent" />
-            <div className="jurb-scanline pointer-events-none absolute inset-0 opacity-50" />
-            <div className="absolute left-5 top-5 border border-[#ff8a0a]/70 bg-[#111820]/80 px-3 py-2 backdrop-blur-sm sm:left-7 sm:top-7">
-              <div className="font-mono text-[9px] uppercase tracking-[.2em] text-[#ffb85d]">JURB / LAB 04</div>
-              <div className="mt-1 text-xs font-bold text-[#f4f1eb]">Performance sem ruído</div>
-            </div>
-            <div className="absolute bottom-5 right-5 max-w-[190px] border-l-2 border-[#ff8a0a] bg-[#111820]/85 p-4 backdrop-blur-sm sm:bottom-7 sm:right-7">
-              <div className="text-[10px] uppercase tracking-[.16em] text-[#92999d]">Setup da semana</div>
-              <div className="mt-1 font-display text-2xl font-semibold leading-none text-[#f4f1eb]">Potência<br />bem escolhida.</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="por-que-jurb" className="border-t border-[#111820]/15 bg-[#f4f1eb]">
-        <div className="mx-auto grid max-w-[1320px] gap-8 px-5 py-12 sm:px-8 md:grid-cols-[.8fr_1.2fr] md:items-center md:py-16 lg:px-12">
+      <section id="por-que-jurb" className="relative isolate overflow-hidden border-t-2 border-[#ff8a0a] bg-[#111820] text-[#f4f1eb]">
+        <div className="jurb-grid pointer-events-none absolute inset-0 opacity-40" />
+        <div className="pointer-events-none absolute -right-32 -top-24 h-[380px] w-[380px] rounded-full bg-[#ff8a0a]/[.10] blur-3xl" />
+        <div className="relative z-10 mx-auto grid max-w-[1320px] items-center gap-8 px-5 py-9 sm:px-8 md:py-11 lg:grid-cols-[1.08fr_.92fr] lg:gap-14 lg:px-12">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[.22em] text-[#e26f00]">O padrão JURB</div>
-            <h2 className="mt-3 max-w-[360px] font-display text-3xl font-semibold leading-[.95] tracking-[-.04em] sm:text-4xl">Tecnologia boa é tecnologia que entrega.</h2>
+            <div className="flex items-center gap-3 font-mono text-[10px] font-bold uppercase tracking-[.28em] text-[#ffb85d]">
+              <span className="h-2 w-2 bg-[#ff8a0a]" /> O padrão URB
+            </div>
+            <h1 className="mt-4 max-w-[16ch] text-balance font-display text-[clamp(2rem,4vw,3.1rem)] font-semibold leading-[1.02] tracking-[-.035em] text-[#f4f1eb]">
+              Tecnologia boa é tecnologia que <span className="text-[#ff8a0a]">entrega.</span>
+            </h1>
+            <Link
+              href="/catalogo"
+              className="jurb-cta group mt-6 inline-flex min-h-11 items-center gap-3 bg-[#ff8a0a] px-6 text-[13px] font-bold uppercase tracking-[.14em] text-[#111820]"
+            >
+              Explorar catálogo
+              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+            </Link>
           </div>
-          <div className="grid gap-7 sm:grid-cols-3">
-            {[
-              { icon: Zap, label: "Curadoria técnica", text: "Só entra o que a nossa bancada aprova." },
-              { icon: ShieldCheck, label: "Garantia JURB", text: "Suporte que continua depois da compra." },
-              { icon: Truck, label: "Postagem expressa", text: "Pedidos aprovados saem no mesmo dia." },
-            ].map(({ icon: Icon, label, text }) => (
-              <article key={label} className="border-t-2 border-[#111820] pt-4">
-                <Icon className="mb-5 h-5 w-5 text-[#e26f00]" aria-hidden="true" />
-                <h3 className="text-sm font-bold">{label}</h3>
-                <p className="mt-2 text-sm leading-5 text-[#4f585d]">{text}</p>
-              </article>
-            ))}
+
+          <div className="relative flex items-center justify-center py-2 lg:py-4">
+            <div className="pointer-events-none absolute left-1/2 top-1/2 h-[220px] w-[440px] max-w-full -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#ff8a0a]/[.14] blur-3xl" />
+            <img
+              src="/images/jurb-logo-full.png"
+              alt="URB Comércio de Eletrônicos"
+              className="relative z-10 h-auto w-full max-w-[300px] drop-shadow-[0_10px_34px_rgba(0,0,0,0.4)] sm:max-w-[360px] lg:max-w-[440px]"
+            />
           </div>
         </div>
       </section>
 
-      <section className="border-y border-[#111820]/15 bg-[#f4f1eb] py-7">
+      <section className="border-b border-[#111820]/15 bg-[#f4f1eb] py-5">
         <div className="mx-auto flex max-w-[1320px] flex-wrap items-center gap-3 px-5 sm:px-8 lg:px-12">
           <span className="mr-3 text-[10px] font-bold uppercase tracking-[.18em] text-[#4f585d]">Explore por categoria</span>
           {["Laptops", "Smartphones", "Áudio", "Gaming", "Câmeras", "Acessórios"].map((category) => (
@@ -86,9 +50,9 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="destaques" className="bg-[#f4f1eb] py-20 md:py-24">
-        <div className="mx-auto max-w-[1320px] px-5 sm:px-8 lg:px-12">
-          <div className="mb-12 flex items-end justify-between">
+      <section id="destaques" className="bg-[#f4f1eb] pt-8 pb-16 md:pt-10 md:pb-20">
+        <div id="oferta" className="mx-auto max-w-[1320px] px-5 sm:px-8 lg:px-12">
+          <div className="mb-6 flex items-end justify-between">
             <div>
               <div className="text-[10px] font-bold uppercase tracking-[.22em] text-[#e26f00]">Escolhas da semana</div>
               <h2 className="mt-3 font-display text-3xl font-semibold tracking-[-.04em] md:text-4xl">Destaques</h2>

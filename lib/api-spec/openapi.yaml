@@ -18,6 +18,8 @@ tags:
     description: Order creation and order history
   - name: profile
     description: Customer profile operations
+  - name: customer-auth
+    description: Customer account authentication
   - name: dashboard
     description: Store performance metrics
   - name: admin-auth
@@ -247,6 +249,110 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Profile"
+  /auth/register:
+    post:
+      operationId: registerCustomer
+      tags: [customer-auth]
+      summary: Create a customer account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: Account created and customer authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerSession"
+        "400":
+          description: Invalid registration data
+        "409":
+          description: E-mail already registered
+        "429":
+          description: Too many attempts
+  /auth/login:
+    post:
+      operationId: loginCustomer
+      tags: [customer-auth]
+      summary: Sign in to a customer account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Authenticated customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerSession"
+        "401":
+          description: Invalid credentials
+        "429":
+          description: Too many attempts
+  /auth/logout:
+    post:
+      operationId: logoutCustomer
+      tags: [customer-auth]
+      summary: Sign out of a customer account
+      responses:
+        "204":
+          description: Signed out
+  /auth/me:
+    get:
+      operationId: getCustomerSession
+      tags: [customer-auth]
+      summary: Get the current customer session
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerSession"
+        "401":
+          description: Authentication required
+  /auth/forgot-password:
+    post:
+      operationId: requestPasswordReset
+      tags: [customer-auth]
+      summary: Request a password reset link by e-mail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordInput"
+      responses:
+        "202":
+          description: If the e-mail is registered, a reset link was sent
+        "429":
+          description: Too many attempts
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [customer-auth]
+      summary: Set a new password using a reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordInput"
+      responses:
+        "200":
+          description: Password updated and customer authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerSession"
+        "400":
+          description: Invalid or expired token
   /dashboard/summary:
     get:
       operationId: getDashboardSummary
@@ -557,25 +663,25 @@ components:
             $ref: "#/components/schemas/OrderItemInput"
     Profile:
       type: object
-      required: [id, name, email, phone, postalCode, city, state]
+      required: [id, name, email]
       properties:
         id: { type: number }
         name: { type: string }
         email: { type: string }
-        phone: { type: string }
-        postalCode: { type: string }
-        city: { type: string }
-        state: { type: string }
+        phone: { type: ["string", "null"] }
+        postalCode: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
     ProfileUpdate:
       type: object
-      required: [name, email, phone, postalCode, city, state]
+      required: [name, email]
       properties:
         name: { type: string, minLength: 2 }
         email: { type: string }
-        phone: { type: string }
-        postalCode: { type: string }
-        city: { type: string }
-        state: { type: string }
+        phone: { type: ["string", "null"] }
+        postalCode: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
     DashboardSummary:
       type: object
       required: [revenue, revenueChange, orders, ordersChange, customers, products, inventoryUnits, lowStock, salesByDay, topProducts, recentOrders]
@@ -680,4 +786,46 @@ components:
       properties:
         user:
           $ref: "#/components/schemas/AdminUser"
+    Customer:
+      type: object
+      required: [id, name, email, phone, postalCode, city, state, createdAt]
+      properties:
+        id: { type: number }
+        name: { type: string }
+        email: { type: string }
+        phone: { type: ["string", "null"] }
+        postalCode: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        state: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+    CustomerSession:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: "#/components/schemas/Customer"
+    RegisterInput:
+      type: object
+      required: [name, email, password]
+      properties:
+        name: { type: string, minLength: 2 }
+        email: { type: string, minLength: 5 }
+        password: { type: string, minLength: 8 }
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, minLength: 5 }
+        password: { type: string, minLength: 1 }
+    ForgotPasswordInput:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, minLength: 5 }
+    ResetPasswordInput:
+      type: object
+      required: [token, password]
+      properties:
+        token: { type: string, minLength: 10 }
+        password: { type: string, minLength: 8 }
 

@@ -6,16 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ProfileUpdate {
-  /** @minLength 2 */
+export interface Customer {
+  id: number;
   name: string;
   email: string;
   /** @nullable */
-  phone?: string | null;
+  phone: string | null;
   /** @nullable */
-  postalCode?: string | null;
+  postalCode: string | null;
   /** @nullable */
-  city?: string | null;
+  city: string | null;
   /** @nullable */
-  state?: string | null;
+  state: string | null;
+  createdAt: Date;
 }

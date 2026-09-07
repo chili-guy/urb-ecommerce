@@ -10,8 +10,12 @@ export interface Profile {
   id: number;
   name: string;
   email: string;
-  phone: string;
-  postalCode: string;
-  city: string;
-  state: string;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  postalCode?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  state?: string | null;
 }

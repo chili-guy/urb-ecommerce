@@ -32,6 +32,10 @@ import {
   profilesTable,
 } from "@workspace/db";
 import { requireRole } from "../middlewares/admin-auth";
+import {
+  getCurrentCustomer,
+  requireCustomer,
+} from "../middlewares/customer-auth";
 
 const router: IRouter = Router();
 
@@ -251,10 +255,27 @@ router.get("/orders", async (req, res): Promise<void> => {
     return;
   }
 
+  const customer = await getCurrentCustomer(req.headers.cookie);
+
+  // Cliente logado vê os próprios pedidos (por perfil ou e-mail). Sem sessão,
+  // só o fluxo de confirmação por e-mail; nunca a lista completa da loja.
+  let filter;
+  if (customer) {
+    filter = or(
+      eq(ordersTable.profileId, customer.id),
+      eq(ordersTable.customerEmail, customer.email),
+    );
+  } else if (params.data.email) {
+    filter = eq(ordersTable.customerEmail, params.data.email);
+  } else {
+    res.json(ListOrdersResponse.parse([]));
+    return;
+  }
+
   const rows = await db
     .select()
     .from(ordersTable)
-    .where(params.data.email ? eq(ordersTable.customerEmail, params.data.email) : undefined)
+    .where(filter)
     .orderBy(desc(ordersTable.createdAt));
 
   const orders = await Promise.all(rows.map((order) => getOrderWithItems(order.id)));
@@ -310,6 +331,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   });
 
   const subtotal = Number(orderItems.reduce((total, item) => total + item.total, 0).toFixed(2));
+  const customer = await getCurrentCustomer(req.headers.cookie);
   const profile = await db
     .select()
     .from(profilesTable)
@@ -320,7 +342,7 @@ router.post("/orders", async (req, res): Promise<void> => {
       const [order] = await tx
         .insert(ordersTable)
         .values({
-          profileId: profile[0]?.id,
+          profileId: customer?.id ?? profile[0]?.id,
           customerName: parsed.data.customerName,
           customerEmail: parsed.data.customerEmail,
           postalCode: parsed.data.postalCode,
@@ -371,12 +393,11 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
   res.json(GetOrderResponse.parse(order));
 });
 
-router.get("/profile", async (_req, res): Promise<void> => {
+router.get("/profile", requireCustomer, async (req, res): Promise<void> => {
   const [profile] = await db
     .select()
     .from(profilesTable)
-    .orderBy(profilesTable.id)
-    .limit(1);
+    .where(eq(profilesTable.id, req.customer!.id));
 
   if (!profile) {
     res.status(404).json({ error: "Perfil não encontrado" });
@@ -386,28 +407,31 @@ router.get("/profile", async (_req, res): Promise<void> => {
   res.json(GetProfileResponse.parse(profile));
 });
 
-router.patch("/profile", async (req, res): Promise<void> => {
+router.patch("/profile", requireCustomer, async (req, res): Promise<void> => {
   const body = UpdateProfileBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: body.error.message });
     return;
   }
 
-  const [currentProfile] = await db
-    .select({ id: profilesTable.id })
-    .from(profilesTable)
-    .orderBy(profilesTable.id)
-    .limit(1);
+  const currentId = req.customer!.id;
+  const nextEmail = body.data.email.trim().toLowerCase();
 
-  if (!currentProfile) {
-    res.status(404).json({ error: "Perfil não encontrado" });
-    return;
+  if (nextEmail !== req.customer!.email) {
+    const [clash] = await db
+      .select({ id: profilesTable.id })
+      .from(profilesTable)
+      .where(eq(profilesTable.email, nextEmail));
+    if (clash && clash.id !== currentId) {
+      res.status(400).json({ error: "Já existe uma conta com este e-mail" });
+      return;
+    }
   }
 
   const [profile] = await db
     .update(profilesTable)
-    .set(body.data)
-    .where(eq(profilesTable.id, currentProfile.id))
+    .set({ ...body.data, email: nextEmail, name: body.data.name.trim() })
+    .where(eq(profilesTable.id, currentId))
     .returning();
 
   req.log.info({ profileId: profile.id }, "Profile updated");

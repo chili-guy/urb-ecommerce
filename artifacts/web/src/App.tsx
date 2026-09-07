@@ -13,12 +13,17 @@ import {
 } from 'wouter';
 
 import { AppShell } from '@/components/layout/AppShell';
+import { AuthProvider } from '@/lib/auth-context';
 import Home from '@/pages/Home';
 import Catalog from '@/pages/Catalog';
 import ProductDetail from '@/pages/ProductDetail';
 import Cart from '@/pages/Cart';
 import Checkout from '@/pages/Checkout';
 import Account from '@/pages/Account';
+import Login from '@/pages/Login';
+import Register from '@/pages/Register';
+import ForgotPassword from '@/pages/ForgotPassword';
+import ResetPassword from '@/pages/ResetPassword';
 import Admin from '@/pages/Admin';
 
 const queryClient = new QueryClient();
@@ -44,6 +49,10 @@ function StorefrontRouter() {
         <Route path="/carrinho" component={Cart} />
         <Route path="/checkout" component={Checkout} />
         <Route path="/conta" component={Account} />
+        <Route path="/entrar" component={Login} />
+        <Route path="/cadastrar" component={Register} />
+        <Route path="/esqueci-senha" component={ForgotPassword} />
+        <Route path="/redefinir-senha" component={ResetPassword} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>
@@ -58,14 +67,16 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <CartProvider>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-            <Router />
-          </WouterRouter>
-          <Toaster richColors position="top-right" />
-        </TooltipProvider>
-      </CartProvider>
+      <AuthProvider>
+        <CartProvider>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+              <Router />
+            </WouterRouter>
+            <Toaster richColors position="top-right" />
+          </TooltipProvider>
+        </CartProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

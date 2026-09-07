@@ -1,23 +1,32 @@
-import { useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useCart } from "@/lib/cart-context";
+import { useAuth } from "@/lib/auth-context";
 import { formatCurrency } from "@/lib/utils";
-import { useGetShippingQuote, useCreateOrder, useGetProfile } from "@workspace/api-client-react";
+import { useGetShippingQuote, useCreateOrder } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Truck, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Checkout() {
   const { items, subtotal, clearCart } = useCart();
   const [, setLocation] = useLocation();
-  const { data: profile } = useGetProfile();
-  
-  const [postalCode, setPostalCode] = useState(profile?.postalCode || "");
-  const [name, setName] = useState(profile?.name || "");
-  const [email, setEmail] = useState(profile?.email || "");
+  const { customer } = useAuth();
+
+  const [postalCode, setPostalCode] = useState(customer?.postalCode ?? "");
+  const [name, setName] = useState(customer?.name ?? "");
+  const [email, setEmail] = useState(customer?.email ?? "");
   const [selectedShipping, setSelectedShipping] = useState<string>("");
   const [orderComplete, setOrderComplete] = useState<number | null>(null);
+
+  // O cliente pode chegar depois da montagem — preenche os campos ainda vazios.
+  useEffect(() => {
+    if (!customer) return;
+    setName((v) => v || customer.name);
+    setEmail((v) => v || customer.email);
+    setPostalCode((v) => v || customer.postalCode || "");
+  }, [customer]);
 
   const getShippingQuote = useGetShippingQuote();
   const createOrder = useCreateOrder();
@@ -69,7 +78,7 @@ export default function Checkout() {
         </div>
         <h1 className="font-display text-3xl font-bold mb-4">Pedido Confirmado!</h1>
         <p className="text-muted-foreground mb-2">
-          Obrigado por comprar na JURB. Seu pedido #{orderComplete} foi recebido.
+          Obrigado por comprar na URB. Seu pedido #{orderComplete} foi recebido.
         </p>
         <p className="text-muted-foreground mb-8">
           Enviamos um email de confirmação para {email}.

@@ -1,9 +1,18 @@
 import { useState } from "react";
-import { useGetProfile, useUpdateProfile, useListOrders, useGetOrder } from "@workspace/api-client-react";
+import { Redirect, useSearchParams } from "wouter";
+import {
+  useGetProfile,
+  useUpdateProfile,
+  useListOrders,
+  useGetOrder,
+  getGetProfileQueryKey,
+  getListOrdersQueryKey,
+} from "@workspace/api-client-react";
+import { useAuth } from "@/lib/auth-context";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Package, User, MapPin, X, ArrowLeft } from "lucide-react";
+import { Package, User, MapPin, X } from "lucide-react";
 import { toast } from "sonner";
 
 function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () => void }) {
@@ -79,10 +88,18 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () =
 }
 
 export default function Account() {
-  const { data: profile, isLoading: profileLoading } = useGetProfile();
-  const { data: orders, isLoading: ordersLoading } = useListOrders();
-  
-  const [activeTab, setActiveTab] = useState<"orders" | "profile">("orders");
+  const { customer, isLoading: authLoading } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { data: profile, isLoading: profileLoading } = useGetProfile({
+    query: { queryKey: getGetProfileQueryKey(), enabled: !!customer, retry: false },
+  });
+  const { data: orders, isLoading: ordersLoading } = useListOrders(undefined, {
+    query: { queryKey: getListOrdersQueryKey(), enabled: !!customer },
+  });
+
+  const [activeTab, setActiveTab] = useState<"orders" | "profile">(
+    searchParams.get("tab") === "profile" ? "profile" : "orders",
+  );
   const updateProfile = useUpdateProfile();
 
   const [name, setName] = useState("");
@@ -98,10 +115,10 @@ export default function Account() {
   if (profile && !name && !isEditing) {
     setName(profile.name);
     setEmail(profile.email);
-    setPhone(profile.phone);
-    setPostalCode(profile.postalCode);
-    setCity(profile.city);
-    setState(profile.state);
+    setPhone(profile.phone ?? "");
+    setPostalCode(profile.postalCode ?? "");
+    setCity(profile.city ?? "");
+    setState(profile.state ?? "");
   }
 
   const handleSaveProfile = () => {
@@ -114,6 +131,14 @@ export default function Account() {
       }
     });
   };
+
+  if (authLoading) {
+    return <div className="container mx-auto px-4 py-24 text-center animate-pulse">Carregando...</div>;
+  }
+
+  if (!customer) {
+    return <Redirect to="/entrar?next=/conta" replace />;
+  }
 
   if (profileLoading) {
     return <div className="container mx-auto px-4 py-24 text-center animate-pulse">Carregando...</div>;
