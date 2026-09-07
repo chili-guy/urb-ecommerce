@@ -349,19 +349,38 @@ export function useTeam(enabled = true) {
     queryKey: ["team"],
     enabled,
     queryFn: async (): Promise<TeamMember[]> => {
-      const { data, error } = await supabase
+      // user_roles.user_id referencia auth.users, não public.profiles — então
+      // o PostgREST não faz o join embutido. Buscamos os perfis à parte.
+      const { data: roleRows, error } = await supabase
         .from("user_roles")
-        .select("user_id, role, profiles(name, email)")
+        .select("user_id, role")
         .order("created_at", { ascending: true });
       if (error) throw error;
+
+      const ids = [...new Set((roleRows ?? []).map((r) => r.user_id as string))];
+      const profiles = new Map<string, { name: string; email: string | null }>();
+      if (ids.length) {
+        const { data: profs, error: pErr } = await supabase
+          .from("profiles")
+          .select("id, name, email")
+          .in("id", ids);
+        if (pErr) throw pErr;
+        for (const p of (profs ?? []) as Row[]) {
+          profiles.set(p.id as string, {
+            name: (p.name as string) ?? "",
+            email: (p.email as string) ?? null,
+          });
+        }
+      }
+
       const byUser = new Map<string, TeamMember>();
-      for (const r of (data ?? []) as Row[]) {
+      for (const r of (roleRows ?? []) as Row[]) {
         const uid = r.user_id as string;
-        const profile = (r.profiles as Row | null) ?? {};
+        const prof = profiles.get(uid) ?? { name: "", email: null };
         const entry = byUser.get(uid) ?? {
           userId: uid,
-          name: (profile.name as string) ?? "",
-          email: (profile.email as string) ?? null,
+          name: prof.name,
+          email: prof.email,
           roles: [],
         };
         entry.roles.push(r.role as Role);
