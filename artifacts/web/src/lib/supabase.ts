@@ -1,23 +1,42 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-if (!url || !anonKey) {
-  throw new Error(
-    "Faltam VITE_SUPABASE_URL e/ou VITE_SUPABASE_ANON_KEY. " +
-      "Copie artifacts/web/.env.example para artifacts/web/.env e preencha.",
-  );
+/** As duas variáveis (baked no build pelo Vite) estão presentes? */
+export const supabaseConfigured = Boolean(url && anonKey);
+
+let client: SupabaseClient | null = null;
+
+function getClient(): SupabaseClient {
+  if (!client) {
+    if (!url || !anonKey) {
+      throw new Error(
+        "Supabase não configurado: defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY " +
+          "nas variáveis de ambiente e faça um novo build.",
+      );
+    }
+    client = createClient(url, anonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
+  }
+  return client;
 }
 
 /**
- * Cliente único do Supabase — todo acesso a dados e autenticação passa por aqui.
- * A `anon key` é pública por design; o que protege os dados é a RLS no Postgres.
+ * Cliente único do Supabase. Inicializado de forma preguiçosa para que a
+ * ausência de configuração não derrube o bundle inteiro na importação —
+ * o app mostra uma mensagem (ver main.tsx) em vez de tela branca.
+ * A `anon key` é pública por design; a RLS é o que protege os dados.
  */
-export const supabase = createClient(url, anonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop, receiver) {
+    const c = getClient();
+    const value = Reflect.get(c, prop, receiver);
+    return typeof value === "function" ? value.bind(c) : value;
   },
 });
