@@ -26,11 +26,11 @@ export default function Cart() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-12">
-      <h1 className="font-display text-3xl font-bold tracking-tight mb-8">Carrinho</h1>
+    <div className="container mx-auto px-4 py-6 sm:py-12">
+      <h1 className="mb-5 font-display text-2xl font-bold tracking-tight sm:mb-8 sm:text-3xl">Carrinho</h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-12">
+        <div className="space-y-6 lg:col-span-2">
           <div className="border rounded-lg overflow-hidden bg-card">
             <div className="grid grid-cols-12 gap-4 p-4 border-b bg-secondary/30 text-sm font-medium text-muted-foreground hidden md:grid">
               <div className="col-span-6">Produto</div>
@@ -100,7 +100,7 @@ export default function Cart() {
         </div>
 
         <div className="lg:col-span-1">
-          <div className="border rounded-lg p-6 bg-card sticky top-24">
+          <div className="rounded-lg border bg-card p-5 sm:p-6 lg:sticky lg:top-24">
             <h3 className="font-display font-bold text-lg mb-6">Resumo do Pedido</h3>
             
             <div className="space-y-4 mb-6">

@@ -3,11 +3,11 @@ import { Link } from "wouter";
 export function Footer() {
   return (
     <footer className="mt-auto border-t border-[#111820]/15 bg-[#f4f1eb] text-[#111820]">
-      <div className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div className="space-y-4">
+      <div className="container mx-auto px-4 py-10 sm:py-12">
+        <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+          <div className="col-span-2 space-y-4 md:col-span-1">
             <Link href="/" className="flex items-center">
-              <img src="/images/jurb-logo-full.png" alt="URB Comércio de Eletrônicos" className="w-[150px]" />
+              <img src="/images/jurb-logo-full.png" alt="URB Comércio de Eletrônicos" className="w-[140px]" />
             </Link>
             <p className="text-sm text-[#4f585d]">
               Curadoria técnica de eletrônicos. Equipamentos selecionados para quem exige o melhor desempenho.

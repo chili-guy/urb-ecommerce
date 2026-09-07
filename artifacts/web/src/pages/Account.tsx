@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Redirect, useSearchParams } from "wouter";
 import { useProfile, useUpdateProfile, useMyOrders, useOrder } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -135,25 +135,32 @@ export default function Account() {
     return <div className="container mx-auto px-4 py-24 text-center animate-pulse">Carregando...</div>;
   }
 
-  return (
-    <div className="container mx-auto px-4 py-12">
-      <h1 className="font-display text-3xl font-bold tracking-tight mb-8">Minha Conta</h1>
+  const tabBtn = (
+    tab: "orders" | "profile",
+    icon: ReactNode,
+    label: string,
+  ) => (
+    <button
+      className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm transition-colors md:flex-none md:justify-start md:px-4 md:py-3 ${
+        activeTab === tab
+          ? "bg-primary/10 font-medium text-primary"
+          : "text-muted-foreground hover:bg-secondary/50"
+      }`}
+      onClick={() => setActiveTab(tab)}
+    >
+      {icon} {label}
+    </button>
+  );
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+  return (
+    <div className="container mx-auto px-4 py-6 sm:py-12">
+      <h1 className="mb-5 font-display text-2xl font-bold tracking-tight sm:mb-8 sm:text-3xl">Minha Conta</h1>
+
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-4 md:gap-8">
         <div className="md:col-span-1">
-          <div className="flex flex-col gap-2 border rounded-lg p-4 bg-card">
-            <button 
-              className={`flex items-center gap-3 px-4 py-3 rounded-md text-left transition-colors ${activeTab === 'orders' ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-secondary/50 text-muted-foreground'}`}
-              onClick={() => setActiveTab('orders')}
-            >
-              <Package className="h-5 w-5" /> Meus Pedidos
-            </button>
-            <button 
-              className={`flex items-center gap-3 px-4 py-3 rounded-md text-left transition-colors ${activeTab === 'profile' ? 'bg-primary/10 text-primary font-medium' : 'hover:bg-secondary/50 text-muted-foreground'}`}
-              onClick={() => setActiveTab('profile')}
-            >
-              <User className="h-5 w-5" /> Dados Pessoais
-            </button>
+          <div className="flex gap-2 rounded-lg border bg-card p-2 md:flex-col md:p-4">
+            {tabBtn("orders", <Package className="h-5 w-5" />, "Meus Pedidos")}
+            {tabBtn("profile", <User className="h-5 w-5" />, "Dados Pessoais")}
           </div>
         </div>
 

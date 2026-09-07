@@ -113,18 +113,18 @@ export default function Checkout() {
   const total = subtotal + (selectedOption?.price || 0);
 
   return (
-    <div className="container mx-auto px-4 py-12">
-      <h1 className="font-display text-3xl font-bold tracking-tight mb-8">Finalizar Pedido</h1>
+    <div className="container mx-auto px-4 pb-28 pt-6 sm:pt-8 lg:pb-12">
+      <h1 className="mb-6 font-display text-2xl font-bold tracking-tight sm:mb-8 sm:text-3xl">Finalizar Pedido</h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-        <div className="lg:col-span-7 space-y-10">
-          
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-12">
+        <div className="space-y-6 sm:space-y-8 lg:col-span-7">
+
           <section>
-            <h3 className="text-xl font-display font-bold mb-4 flex items-center gap-2">
-              <span className="bg-primary text-primary-foreground w-6 h-6 rounded-full flex items-center justify-center text-sm">1</span> 
+            <h3 className="mb-3 flex items-center gap-2 font-display text-lg font-bold sm:mb-4 sm:text-xl">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">1</span>
               Identificação
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6 border rounded-lg bg-card">
+            <div className="grid grid-cols-1 gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 sm:p-6">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Nome Completo</label>
                 <Input value={name} onChange={e => setName(e.target.value)} placeholder="João Silva" />
@@ -137,23 +137,24 @@ export default function Checkout() {
           </section>
 
           <section>
-            <h3 className="text-xl font-display font-bold mb-4 flex items-center gap-2">
-              <span className="bg-primary text-primary-foreground w-6 h-6 rounded-full flex items-center justify-center text-sm">2</span> 
+            <h3 className="mb-3 flex items-center gap-2 font-display text-lg font-bold sm:mb-4 sm:text-xl">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">2</span>
               Entrega
             </h3>
-            <div className="p-6 border rounded-lg bg-card space-y-6">
-              <div className="flex gap-4 items-end">
-                <div className="space-y-2 flex-1">
+            <div className="space-y-5 rounded-lg border bg-card p-4 sm:space-y-6 sm:p-6">
+              <div className="flex items-end gap-3">
+                <div className="flex-1 space-y-2">
                   <label className="text-sm font-medium">CEP</label>
-                  <Input 
-                    value={postalCode} 
-                    onChange={e => setPostalCode(e.target.value)} 
-                    placeholder="00000-000" 
+                  <Input
+                    value={postalCode}
+                    onChange={e => setPostalCode(e.target.value)}
+                    placeholder="00000-000"
+                    inputMode="numeric"
                     maxLength={9}
                   />
                 </div>
-                <Button 
-                  onClick={handleCalculateShipping} 
+                <Button
+                  onClick={handleCalculateShipping}
                   disabled={items.length === 0}
                   variant="secondary"
                 >
@@ -165,27 +166,25 @@ export default function Checkout() {
                 <div className="space-y-3 pt-4 border-t">
                   <p className="text-sm font-medium mb-2">Opções de Frete</p>
                   {shippingOptions.map(option => (
-                    <label 
+                    <label
                       key={option.id}
-                      className={`flex items-center justify-between p-4 border rounded-md cursor-pointer transition-colors ${
+                      className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 transition-colors sm:p-4 ${
                         selectedShipping === option.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:bg-secondary/50"
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <input 
-                          type="radio" 
-                          name="shipping" 
-                          value={option.id}
-                          checked={selectedShipping === option.id}
-                          onChange={(e) => setSelectedShipping(e.target.value)}
-                          className="h-4 w-4 text-primary focus:ring-primary border-gray-300"
-                        />
-                        <div>
-                          <div className="font-medium">{option.carrier} - {option.service}</div>
-                          <div className="text-xs text-muted-foreground">{option.deliveryDays} dias úteis • {option.description}</div>
-                        </div>
+                      <input
+                        type="radio"
+                        name="shipping"
+                        value={option.id}
+                        checked={selectedShipping === option.id}
+                        onChange={(e) => setSelectedShipping(e.target.value)}
+                        className="h-4 w-4 shrink-0 border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium">{option.carrier} — {option.service}</div>
+                        <div className="text-xs text-muted-foreground">{option.deliveryDays} dias úteis · {option.description}</div>
                       </div>
-                      <div className="font-mono font-medium">
+                      <div className="shrink-0 font-mono text-sm font-medium">
                         {option.price === 0 ? "Grátis" : formatCurrency(option.price)}
                       </div>
                     </label>
@@ -196,15 +195,15 @@ export default function Checkout() {
           </section>
 
           <section>
-            <h3 className="text-xl font-display font-bold mb-4 flex items-center gap-2">
-              <span className="bg-primary text-primary-foreground w-6 h-6 rounded-full flex items-center justify-center text-sm">3</span> 
+            <h3 className="mb-3 flex items-center gap-2 font-display text-lg font-bold sm:mb-4 sm:text-xl">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">3</span>
               Pagamento
             </h3>
-            <div className="p-6 border rounded-lg bg-card flex items-center gap-4 text-muted-foreground">
-              <ShieldCheck className="h-8 w-8 text-primary" />
+            <div className="flex items-center gap-4 rounded-lg border bg-card p-4 text-muted-foreground sm:p-6">
+              <ShieldCheck className="h-7 w-7 shrink-0 text-primary sm:h-8 sm:w-8" />
               <div>
                 <p className="font-medium text-foreground">Ambiente de teste</p>
-                <p className="text-sm">Nenhum pagamento real será processado. Clique em finalizar pedido.</p>
+                <p className="text-sm">Nenhum pagamento real será processado.</p>
               </div>
             </div>
           </section>
@@ -212,13 +211,13 @@ export default function Checkout() {
         </div>
 
         <div className="lg:col-span-5">
-          <div className="border rounded-lg bg-card sticky top-24 overflow-hidden">
-            <div className="p-6 bg-secondary/30 border-b">
-              <h3 className="font-display font-bold text-lg">Resumo do Pedido</h3>
+          <div className="overflow-hidden rounded-lg border bg-card lg:sticky lg:top-24">
+            <div className="border-b bg-secondary/30 p-4 sm:p-6">
+              <h3 className="font-display text-lg font-bold">Resumo do Pedido</h3>
             </div>
-            
-            <div className="p-6 space-y-6">
-              <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+
+            <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
+              <div className="max-h-[300px] space-y-4 overflow-y-auto pr-2">
                 {items.map(item => (
                   <div key={item.product.id} className="flex gap-4 text-sm">
                     <div className="w-16 h-16 rounded border bg-white overflow-hidden shrink-0">
@@ -247,15 +246,15 @@ export default function Checkout() {
               </div>
               
               <div className="border-t pt-4">
-                <div className="flex justify-between items-end">
+                <div className="flex items-end justify-between">
                   <span className="font-bold">Total</span>
-                  <span className="font-mono font-bold text-2xl text-primary">{formatCurrency(total)}</span>
+                  <span className="font-mono text-2xl font-bold text-primary">{formatCurrency(total)}</span>
                 </div>
               </div>
-              
-              <Button 
-                size="lg" 
-                className="w-full text-base h-12" 
+
+              <Button
+                size="lg"
+                className="hidden h-12 w-full text-base lg:flex"
                 onClick={handleCheckout}
                 disabled={createOrder.isPending || !selectedShipping}
               >
@@ -263,6 +262,28 @@ export default function Checkout() {
               </Button>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Barra fixa de checkout no mobile */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 px-4 py-3 backdrop-blur-sm lg:hidden">
+        <div className="mx-auto flex max-w-[1320px] items-center gap-4">
+          <div className="shrink-0">
+            <div className="text-[11px] text-muted-foreground">Total</div>
+            <div className="font-mono text-lg font-bold text-primary">{formatCurrency(total)}</div>
+          </div>
+          <Button
+            size="lg"
+            className="h-12 flex-1 text-base"
+            onClick={handleCheckout}
+            disabled={createOrder.isPending || !selectedShipping}
+          >
+            {createOrder.isPending
+              ? "Processando..."
+              : !selectedShipping
+                ? "Calcule o frete"
+                : "Confirmar Pedido"}
+          </Button>
         </div>
       </div>
     </div>

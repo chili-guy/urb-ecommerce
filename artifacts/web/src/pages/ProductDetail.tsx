@@ -54,13 +54,13 @@ export default function ProductDetail() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 md:py-12">
-      <Link href="/catalogo" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-8 transition-colors">
+    <div className="container mx-auto px-4 py-6 md:py-12">
+      <Link href="/catalogo" className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground md:mb-8">
         <ArrowLeft className="h-4 w-4" /> Voltar ao catálogo
       </Link>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-12 lg:gap-16">
-        <div className="aspect-square rounded-xl bg-secondary/30 flex items-center justify-center p-8 relative overflow-hidden border">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-12 lg:gap-16">
+        <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-xl border bg-secondary/30 p-6 sm:p-8">
           {product.featured && (
             <Badge className="absolute top-4 left-4 z-10 bg-accent hover:bg-accent border-none text-accent-foreground">
               Destaque
@@ -80,7 +80,7 @@ export default function ProductDetail() {
           <div className="text-sm font-mono text-muted-foreground uppercase tracking-wider mb-3">
             {product.category}
           </div>
-          <h1 className="font-display text-3xl md:text-4xl font-bold tracking-tight mb-4">
+          <h1 className="mb-3 font-display text-2xl font-bold tracking-tight sm:text-3xl md:mb-4 md:text-4xl">
             {product.name}
           </h1>
           
@@ -136,13 +136,13 @@ export default function ProductDetail() {
               </Button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 pt-4">
+            <div className="grid grid-cols-1 gap-3 pt-4 sm:grid-cols-2 sm:gap-4">
               <div className="flex gap-3 text-sm text-muted-foreground">
-                <ShieldCheck className="h-5 w-5 text-primary shrink-0" />
+                <ShieldCheck className="h-5 w-5 shrink-0 text-primary" />
                 <span>Garantia de 12 meses direto com a URB.</span>
               </div>
               <div className="flex gap-3 text-sm text-muted-foreground">
-                <Truck className="h-5 w-5 text-primary shrink-0" />
+                <Truck className="h-5 w-5 shrink-0 text-primary" />
                 <span>Frete expresso disponível para todo Brasil.</span>
               </div>
             </div>
