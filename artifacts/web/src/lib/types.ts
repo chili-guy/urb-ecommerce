@@ -1,6 +1,12 @@
 // Tipos de domínio — espelham as tabelas de supabase/migrations/0001_init.sql.
 // (Substituem o antigo pacote @workspace/api-zod.)
 
+/** Par de especificação técnica ({ label: "Tela", value: "6,7\" AMOLED 120Hz" }). */
+export type ProductSpec = {
+  label: string;
+  value: string;
+};
+
 export type Product = {
   id: number;
   name: string;
@@ -12,6 +18,8 @@ export type Product = {
   stock: number;
   imageUrl: string;
   featured: boolean;
+  specs: ProductSpec[];
+  viewCount: number;
   rating: number;
   reviewCount: number;
   createdAt: string;
@@ -26,6 +34,7 @@ export type ProductInput = {
   stock: number;
   imageUrl: string;
   featured: boolean;
+  specs: ProductSpec[];
 };
 
 export type Profile = {
@@ -38,7 +47,47 @@ export type Profile = {
   state: string | null;
 };
 
+/** Endereço salvo do cliente (tabela public.addresses). */
+export type Address = {
+  id: string;
+  label: string;
+  recipient: string;
+  postalCode: string;
+  street: string;
+  number: string;
+  complement: string | null;
+  district: string;
+  city: string;
+  state: string;
+  isDefault: boolean;
+  createdAt: string;
+};
+
+export type AddressInput = {
+  label: string;
+  recipient: string;
+  postalCode: string;
+  street: string;
+  number: string;
+  complement: string;
+  district: string;
+  city: string;
+  state: string;
+  isDefault: boolean;
+};
+
 export type Role = "admin" | "operator";
+
+/** Estados possíveis de um pedido — espelham o CHECK em orders.status. */
+export const ORDER_STATUSES = [
+  "Pedido confirmado",
+  "Em separação",
+  "Enviado",
+  "Entregue",
+  "Cancelado",
+] as const;
+
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export type ShippingOption = {
   id: string;
@@ -81,6 +130,7 @@ export type DashboardSummary = {
   lowStock: number;
   salesByDay: { label: string; value: number }[];
   topProducts: { name: string; sales: number; revenue: number }[];
+  mostViewed: { id: number; name: string; views: number; imageUrl: string }[];
   recentOrders: {
     id: number;
     customerName: string;
@@ -102,6 +152,8 @@ export type ProductRow = {
   stock: number;
   image_url: string;
   featured: boolean;
+  specs: ProductSpec[];
+  view_count: number;
   rating: number;
   review_count: number;
   created_at: string;

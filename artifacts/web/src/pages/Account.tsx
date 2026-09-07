@@ -1,11 +1,23 @@
-import { useState, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Redirect, useSearchParams } from "wouter";
-import { useProfile, useUpdateProfile, useMyOrders, useOrder } from "@/lib/api";
+import {
+  useProfile,
+  useUpdateProfile,
+  useMyOrders,
+  useOrder,
+  useAddresses,
+  useCreateAddress,
+  useUpdateAddress,
+  useDeleteAddress,
+  useSetDefaultAddress,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { formatCurrency } from "@/lib/utils";
+import { formatCep, lookupCep, normalizeCep } from "@/lib/cep";
+import type { Address, AddressInput } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Package, User, MapPin, X } from "lucide-react";
+import { Package, User, MapPin, X, Plus, Star, Pencil, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () => void }) {
@@ -80,14 +92,306 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () =
   );
 }
 
+const EMPTY_ADDRESS: AddressInput = {
+  label: "",
+  recipient: "",
+  postalCode: "",
+  street: "",
+  number: "",
+  complement: "",
+  district: "",
+  city: "",
+  state: "",
+  isDefault: false,
+};
+
+function formatAddressLine(a: Address): string {
+  const parts = [
+    [a.street, a.number].filter(Boolean).join(", "),
+    a.complement,
+    a.district,
+    [a.city, a.state].filter(Boolean).join(" - "),
+    a.postalCode ? `CEP ${formatCep(a.postalCode)}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function AddressForm({
+  initial,
+  saving,
+  onCancel,
+  onSubmit,
+}: {
+  initial: AddressInput;
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: (data: AddressInput) => void;
+}) {
+  const [form, setForm] = useState<AddressInput>(initial);
+  const [cepLoading, setCepLoading] = useState(false);
+
+  const set = (patch: Partial<AddressInput>) => setForm((f) => ({ ...f, ...patch }));
+
+  const handleCepBlur = async () => {
+    if (normalizeCep(form.postalCode).length !== 8) return;
+    setCepLoading(true);
+    const found = await lookupCep(form.postalCode);
+    setCepLoading(false);
+    if (found) {
+      set({
+        street: found.street || form.street,
+        district: found.district || form.district,
+        city: found.city || form.city,
+        state: found.state || form.state,
+      });
+    }
+  };
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (normalizeCep(form.postalCode).length !== 8) {
+      toast.error("Informe um CEP válido.");
+      return;
+    }
+    onSubmit(form);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5 rounded-lg border bg-card p-5 md:p-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Identificação</label>
+          <Input value={form.label} onChange={(e) => set({ label: e.target.value })} placeholder="Casa, Trabalho..." />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Destinatário</label>
+          <Input value={form.recipient} onChange={(e) => set({ recipient: e.target.value })} placeholder="Quem recebe" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[10rem_1fr]">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">CEP</label>
+          <div className="relative">
+            <Input
+              value={formatCep(form.postalCode)}
+              onChange={(e) => set({ postalCode: e.target.value })}
+              onBlur={handleCepBlur}
+              inputMode="numeric"
+              maxLength={9}
+              placeholder="00000-000"
+              required
+            />
+            {cepLoading && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Rua / Logradouro</label>
+          <Input value={form.street} onChange={(e) => set({ street: e.target.value })} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Número</label>
+          <Input value={form.number} onChange={(e) => set({ number: e.target.value })} />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Complemento</label>
+          <Input value={form.complement} onChange={(e) => set({ complement: e.target.value })} placeholder="Apto, bloco..." />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Bairro</label>
+          <Input value={form.district} onChange={(e) => set({ district: e.target.value })} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_6rem]">
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Cidade</label>
+          <Input value={form.city} onChange={(e) => set({ city: e.target.value })} />
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">UF</label>
+          <Input value={form.state} onChange={(e) => set({ state: e.target.value.toUpperCase() })} maxLength={2} />
+        </div>
+      </div>
+
+      <label className="flex items-center gap-3 text-sm">
+        <input
+          type="checkbox"
+          checked={form.isDefault}
+          onChange={(e) => set({ isDefault: e.target.checked })}
+          className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
+        />
+        Usar como endereço padrão
+      </label>
+
+      <div className="flex gap-3 border-t pt-4">
+        <Button type="submit" disabled={saving}>
+          {saving ? "Salvando..." : "Salvar endereço"}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onCancel}>Cancelar</Button>
+      </div>
+    </form>
+  );
+}
+
+function AddressesTab() {
+  const { data: addresses, isLoading } = useAddresses(true);
+  const createAddress = useCreateAddress();
+  const updateAddress = useUpdateAddress();
+  const deleteAddress = useDeleteAddress();
+  const setDefault = useSetDefaultAddress();
+
+  const [mode, setMode] = useState<"list" | "new" | { edit: Address }>("list");
+
+  const handleCreate = (data: AddressInput) => {
+    createAddress.mutate(data, {
+      onSuccess: () => {
+        toast.success("Endereço adicionado");
+        setMode("list");
+      },
+      onError: () => toast.error("Não foi possível salvar o endereço."),
+    });
+  };
+
+  const handleUpdate = (id: string, data: AddressInput) => {
+    updateAddress.mutate(
+      { id, data },
+      {
+        onSuccess: () => {
+          toast.success("Endereço atualizado");
+          setMode("list");
+        },
+        onError: () => toast.error("Não foi possível salvar o endereço."),
+      },
+    );
+  };
+
+  const handleDelete = (id: string) => {
+    if (!confirm("Remover este endereço?")) return;
+    deleteAddress.mutate(id, {
+      onSuccess: () => toast.success("Endereço removido"),
+      onError: () => toast.error("Não foi possível remover."),
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-display font-bold">Meus Endereços</h2>
+        {mode === "list" && (
+          <Button size="sm" onClick={() => setMode("new")}>
+            <Plus className="mr-1.5 h-4 w-4" /> Novo endereço
+          </Button>
+        )}
+      </div>
+
+      {mode === "new" && (
+        <AddressForm
+          key="new"
+          initial={EMPTY_ADDRESS}
+          saving={createAddress.isPending}
+          onCancel={() => setMode("list")}
+          onSubmit={handleCreate}
+        />
+      )}
+
+      {typeof mode === "object" && "edit" in mode && (
+        <AddressForm
+          key={mode.edit.id}
+          initial={{
+            label: mode.edit.label,
+            recipient: mode.edit.recipient,
+            postalCode: mode.edit.postalCode,
+            street: mode.edit.street,
+            number: mode.edit.number,
+            complement: mode.edit.complement ?? "",
+            district: mode.edit.district,
+            city: mode.edit.city,
+            state: mode.edit.state,
+            isDefault: mode.edit.isDefault,
+          }}
+          saving={updateAddress.isPending}
+          onCancel={() => setMode("list")}
+          onSubmit={(data) => handleUpdate(mode.edit.id, data)}
+        />
+      )}
+
+      {mode === "list" && (
+        isLoading ? (
+          <div className="animate-pulse space-y-4">
+            {[1, 2].map((i) => <div key={i} className="h-28 rounded-lg bg-secondary" />)}
+          </div>
+        ) : !addresses || addresses.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
+            Você ainda não salvou nenhum endereço.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {addresses.map((a) => (
+              <div key={a.id} className="rounded-lg border bg-card p-4 sm:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">{a.label}</span>
+                      {a.isDefault && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                          <Star className="h-3 w-3 fill-current" /> Padrão
+                        </span>
+                      )}
+                    </div>
+                    {a.recipient && <div className="mt-1 text-sm text-muted-foreground">{a.recipient}</div>}
+                    <div className="mt-1 text-sm text-muted-foreground">{formatAddressLine(a)}</div>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setMode({ edit: a })}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 hover:border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      onClick={() => handleDelete(a.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+                {!a.isDefault && (
+                  <button
+                    onClick={() =>
+                      setDefault.mutate(a.id, {
+                        onSuccess: () => toast.success("Endereço padrão atualizado"),
+                        onError: () => toast.error("Não foi possível atualizar."),
+                      })
+                    }
+                    className="mt-3 text-xs font-medium text-primary hover:underline"
+                  >
+                    Tornar padrão
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+type Tab = "orders" | "profile" | "addresses";
+
 export default function Account() {
   const { user, isLoading: authLoading } = useAuth();
   const [searchParams] = useSearchParams();
   const { data: profile, isLoading: profileLoading } = useProfile(!!user);
   const { data: orders, isLoading: ordersLoading } = useMyOrders(!!user);
 
-  const [activeTab, setActiveTab] = useState<"orders" | "profile">(
-    searchParams.get("tab") === "profile" ? "profile" : "orders",
+  const initialTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<Tab>(
+    initialTab === "profile" || initialTab === "addresses" ? initialTab : "orders",
   );
   const updateProfile = useUpdateProfile();
 
@@ -135,11 +439,7 @@ export default function Account() {
     return <div className="container mx-auto px-4 py-24 text-center animate-pulse">Carregando...</div>;
   }
 
-  const tabBtn = (
-    tab: "orders" | "profile",
-    icon: ReactNode,
-    label: string,
-  ) => (
+  const tabBtn = (tab: Tab, icon: ReactNode, label: string) => (
     <button
       className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm transition-colors md:flex-none md:justify-start md:px-4 md:py-3 ${
         activeTab === tab
@@ -159,8 +459,9 @@ export default function Account() {
       <div className="grid grid-cols-1 gap-5 md:grid-cols-4 md:gap-8">
         <div className="md:col-span-1">
           <div className="flex gap-2 rounded-lg border bg-card p-2 md:flex-col md:p-4">
-            {tabBtn("orders", <Package className="h-5 w-5" />, "Meus Pedidos")}
-            {tabBtn("profile", <User className="h-5 w-5" />, "Dados Pessoais")}
+            {tabBtn("orders", <Package className="h-5 w-5 shrink-0" />, "Pedidos")}
+            {tabBtn("profile", <User className="h-5 w-5 shrink-0" />, "Dados")}
+            {tabBtn("addresses", <MapPin className="h-5 w-5 shrink-0" />, "Endereços")}
           </div>
         </div>
 
@@ -168,7 +469,7 @@ export default function Account() {
           {activeTab === 'orders' && (
             <div className="space-y-6">
               <h2 className="text-xl font-display font-bold">Histórico de Pedidos</h2>
-              
+
               {ordersLoading ? (
                 <div className="animate-pulse space-y-4">
                   {[1,2,3].map(i => <div key={i} className="h-32 bg-secondary rounded-lg" />)}
@@ -228,18 +529,18 @@ export default function Account() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Nome Completo</label>
-                  <Input 
-                    value={name} 
-                    onChange={e => setName(e.target.value)} 
+                  <Input
+                    value={name}
+                    onChange={e => setName(e.target.value)}
                     disabled={!isEditing}
                     className={!isEditing ? "bg-secondary/30" : ""}
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">E-mail</label>
-                  <Input 
-                    value={email} 
-                    onChange={e => setEmail(e.target.value)} 
+                  <Input
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
                     disabled={!isEditing}
                     type="email"
                     className={!isEditing ? "bg-secondary/30" : ""}
@@ -247,9 +548,9 @@ export default function Account() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Telefone</label>
-                  <Input 
-                    value={phone} 
-                    onChange={e => setPhone(e.target.value)} 
+                  <Input
+                    value={phone}
+                    onChange={e => setPhone(e.target.value)}
                     disabled={!isEditing}
                     className={!isEditing ? "bg-secondary/30" : ""}
                   />
@@ -257,33 +558,36 @@ export default function Account() {
               </div>
 
               <h3 className="font-display font-bold border-b pb-2 pt-4 flex items-center gap-2">
-                <MapPin className="h-4 w-4" /> Endereço
+                <MapPin className="h-4 w-4" /> Endereço principal
               </h3>
-              
+              <p className="-mt-4 text-xs text-muted-foreground">
+                Endereço rápido para o checkout. Cadastre outros na aba <strong>Endereços</strong>.
+              </p>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">CEP</label>
-                  <Input 
-                    value={postalCode} 
-                    onChange={e => setPostalCode(e.target.value)} 
+                  <Input
+                    value={postalCode}
+                    onChange={e => setPostalCode(e.target.value)}
                     disabled={!isEditing}
                     className={!isEditing ? "bg-secondary/30" : ""}
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Cidade</label>
-                  <Input 
-                    value={city} 
-                    onChange={e => setCity(e.target.value)} 
+                  <Input
+                    value={city}
+                    onChange={e => setCity(e.target.value)}
                     disabled={!isEditing}
                     className={!isEditing ? "bg-secondary/30" : ""}
                   />
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Estado</label>
-                  <Input 
-                    value={state} 
-                    onChange={e => setState(e.target.value)} 
+                  <Input
+                    value={state}
+                    onChange={e => setState(e.target.value)}
                     disabled={!isEditing}
                     className={!isEditing ? "bg-secondary/30" : ""}
                   />
@@ -302,13 +606,15 @@ export default function Account() {
               )}
             </div>
           )}
+
+          {activeTab === 'addresses' && <AddressesTab />}
         </div>
       </div>
-      
+
       {selectedOrderId && (
-        <OrderDetailModal 
-          orderId={selectedOrderId} 
-          onClose={() => setSelectedOrderId(null)} 
+        <OrderDetailModal
+          orderId={selectedOrderId}
+          onClose={() => setSelectedOrderId(null)}
         />
       )}
     </div>

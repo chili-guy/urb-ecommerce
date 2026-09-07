@@ -1,11 +1,11 @@
 import { useParams, Link } from "wouter";
-import { useProduct } from "@/lib/api";
+import { incrementProductView, useProduct } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { useCart } from "@/lib/cart-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShoppingCart, ArrowLeft, Star, ShieldCheck, Truck, Check } from "lucide-react";
-import { useState } from "react";
+import { ShoppingCart, ArrowLeft, Star, ShieldCheck, Truck, Check, ListChecks } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function ProductDetail() {
@@ -13,6 +13,19 @@ export default function ProductDetail() {
   const { data: product, isLoading, isError } = useProduct(Number(id), { enabled: !!id });
   const { addItem } = useCart();
   const [quantity, setQuantity] = useState(1);
+
+  // Conta 1 acesso por produto por sessão do navegador (métrica do painel).
+  useEffect(() => {
+    if (!product) return;
+    const key = `ur3:viewed:${product.id}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      /* modo privado / storage bloqueado — conta mesmo assim */
+    }
+    void incrementProductView(product.id);
+  }, [product]);
 
   if (isLoading) {
     return (
@@ -111,6 +124,25 @@ export default function ProductDetail() {
           <p className="text-muted-foreground text-lg leading-relaxed mb-8">
             {product.description}
           </p>
+
+          {product.specs.length > 0 && (
+            <div className="mb-8">
+              <h2 className="mb-3 flex items-center gap-2 font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                <ListChecks className="h-4 w-4" /> Especificações técnicas
+              </h2>
+              <dl className="divide-y divide-border overflow-hidden rounded-lg border">
+                {product.specs.map((s, i) => (
+                  <div
+                    key={i}
+                    className="grid grid-cols-1 gap-1 px-4 py-3 text-sm sm:grid-cols-[minmax(0,11rem)_1fr] sm:gap-4"
+                  >
+                    <dt className="font-medium text-muted-foreground">{s.label}</dt>
+                    <dd className="text-foreground">{s.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
 
           <div className="mt-auto space-y-6 pt-8 border-t">
             <div className="flex items-center gap-4">

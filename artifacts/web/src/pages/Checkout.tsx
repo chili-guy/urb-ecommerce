@@ -1,26 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useCart } from "@/lib/cart-context";
 import { useAuth } from "@/lib/auth-context";
-import { useProfile } from "@/lib/api";
+import { useAddresses, useProfile } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { formatCep } from "@/lib/cep";
 import { useCreateOrder } from "@/lib/api";
 import { getShippingOptions } from "@/lib/shipping";
-import type { ShippingOption } from "@/lib/types";
+import type { Address, ShippingOption } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ShieldCheck, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, CheckCircle2, MapPin } from "lucide-react";
 import { toast } from "sonner";
+
+function shortAddress(a: Address): string {
+  return [
+    [a.street, a.number].filter(Boolean).join(", "),
+    a.district,
+    [a.city, a.state].filter(Boolean).join(" - "),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export default function Checkout() {
   const { items, subtotal, clearCart } = useCart();
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { data: profile } = useProfile(!!user);
+  const { data: addresses } = useAddresses(!!user);
 
   const [postalCode, setPostalCode] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [selectedShipping, setSelectedShipping] = useState<string>("");
   const [orderComplete, setOrderComplete] = useState<number | null>(null);
@@ -38,16 +51,42 @@ export default function Checkout() {
 
   const createOrder = useCreateOrder();
 
+  const calcShipping = (cep: string) => {
+    if (cep.replace(/\D/g, "").length < 8) return;
+    const count = items.reduce((n, i) => n + i.quantity, 0);
+    const options = getShippingOptions(count, cep);
+    setShippingOptions(options);
+    setSelectedShipping((cur) => cur || options[0]?.id || "");
+  };
+
   const handleCalculateShipping = () => {
     if (postalCode.replace(/\D/g, "").length < 8) {
       toast.error("CEP inválido");
       return;
     }
-    const count = items.reduce((n, i) => n + i.quantity, 0);
-    const options = getShippingOptions(count, postalCode);
-    setShippingOptions(options);
-    setSelectedShipping((cur) => cur || options[0]?.id || "");
+    calcShipping(postalCode);
   };
+
+  const selectSavedAddress = (a: Address) => {
+    setSelectedAddressId(a.id);
+    setPostalCode(formatCep(a.postalCode));
+    if (a.recipient) setName((v) => v || a.recipient);
+    calcShipping(a.postalCode);
+  };
+
+  // Seleciona o endereço padrão automaticamente na primeira carga.
+  const addressPrefilled = useRef(false);
+  useEffect(() => {
+    if (addressPrefilled.current) return;
+    if (!addresses || addresses.length === 0) return;
+    addressPrefilled.current = true;
+    const def = addresses.find((a) => a.isDefault) ?? addresses[0];
+    setSelectedAddressId(def.id);
+    setPostalCode((v) => v || formatCep(def.postalCode));
+    setName((v) => v || def.recipient || "");
+    calcShipping(def.postalCode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addresses]);
 
   const handleCheckout = () => {
     const option = shippingOptions.find((o) => o.id === selectedShipping);
@@ -142,12 +181,51 @@ export default function Checkout() {
               Entrega
             </h3>
             <div className="space-y-5 rounded-lg border bg-card p-4 sm:space-y-6 sm:p-6">
+              {user && addresses && addresses.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Endereços salvos</p>
+                  {addresses.map((a) => (
+                    <label
+                      key={a.id}
+                      className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${
+                        selectedAddressId === a.id ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:bg-secondary/50"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="saved-address"
+                        checked={selectedAddressId === a.id}
+                        onChange={() => selectSavedAddress(a)}
+                        className="mt-0.5 h-4 w-4 shrink-0 text-primary focus:ring-primary"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          {a.label}
+                          {a.isDefault && <span className="text-[11px] font-normal text-primary">(padrão)</span>}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{shortAddress(a)} · CEP {formatCep(a.postalCode)}</div>
+                      </div>
+                    </label>
+                  ))}
+                  <label className="flex cursor-pointer items-center gap-3 rounded-md border border-dashed p-3 text-sm hover:bg-secondary/50">
+                    <input
+                      type="radio"
+                      name="saved-address"
+                      checked={selectedAddressId === null}
+                      onChange={() => setSelectedAddressId(null)}
+                      className="h-4 w-4 shrink-0 text-primary focus:ring-primary"
+                    />
+                    Informar outro CEP
+                  </label>
+                </div>
+              )}
               <div className="flex items-end gap-3">
                 <div className="flex-1 space-y-2">
                   <label className="text-sm font-medium">CEP</label>
                   <Input
                     value={postalCode}
-                    onChange={e => setPostalCode(e.target.value)}
+                    onChange={e => { setPostalCode(e.target.value); setSelectedAddressId(null); }}
                     placeholder="00000-000"
                     inputMode="numeric"
                     maxLength={9}

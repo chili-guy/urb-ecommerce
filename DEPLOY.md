@@ -15,11 +15,19 @@ scripts              seed do catálogo via service_role key
 2. **SQL Editor** → rode, nesta ordem, o conteúdo de:
    - `supabase/migrations/0001_init.sql`
    - `supabase/migrations/0002_create_order.sql`
-3. **Authentication → Sign In / Providers → Email**: em produção, deixe
+   - `supabase/migrations/0003_oauth_profile_name.sql`
+   - `supabase/migrations/0004_feature_pack.sql` — upload de imagem (bucket
+     `product-images`), especificações técnicas, contador de acessos,
+     endereços salvos do cliente e status de pedido gerenciável.
+   Todos são idempotentes: podem ser reexecutados sem erro.
+3. **Storage**: a migração `0004` já cria o bucket público `product-images`
+   com as políticas certas (leitura liberada, escrita só para a equipe).
+   Nada a fazer manualmente.
+4. **Authentication → Sign In / Providers → Email**: em produção, deixe
    *Confirm email* ligado (e configure um SMTP em *Project Settings → Auth*).
    Em desenvolvimento pode desligar para agilizar.
-4. **Login com Google** (opcional): rode `supabase/migrations/0003_oauth_profile_name.sql`
-   e ative o provedor:
+5. **Login com Google** (opcional): o `0003` já ajusta o trigger de perfil.
+   Ative o provedor:
    - Google Cloud Console → *APIs & Services → Credentials* → *Create
      credentials → OAuth client ID* → tipo **Web application**.
    - Em *Authorized redirect URIs* adicione:
@@ -29,14 +37,14 @@ scripts              seed do catálogo via service_role key
    - Em *Authentication → URL Configuration → Redirect URLs* adicione a URL
      do site (ex. `https://urb-ecommerce.vercel.app/**` e
      `http://localhost:5173/**` para dev).
-5. **Catálogo de exemplo** (opcional), do seu computador:
+6. **Catálogo de exemplo** (opcional), do seu computador:
    ```bash
    SUPABASE_URL="https://xxxx.supabase.co" \
    SUPABASE_SERVICE_ROLE_KEY="..." \
    pnpm --filter @workspace/scripts run seed
    ```
    > A `service_role` key ignora a RLS — nunca versione nem exponha no front.
-6. **Primeiro admin**: cadastre-se no site, pegue seu UUID em
+7. **Primeiro admin**: cadastre-se no site, pegue seu UUID em
    *Authentication → Users* e rode no SQL Editor:
    ```sql
    insert into public.user_roles (user_id, role) values ('<seu-uuid>', 'admin');

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Redirect } from "wouter";
 import {
   useAdminOrders,
@@ -9,10 +9,19 @@ import {
   useProducts,
   useRevokeRole,
   useTeam,
+  useUpdateOrderStatus,
   useUpdateProduct,
 } from "@/lib/api";
+import { uploadProductImage } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
-import type { Product, ProductInput, Role } from "@/lib/types";
+import {
+  ORDER_STATUSES,
+  type OrderStatus,
+  type Product,
+  type ProductInput,
+  type ProductSpec,
+  type Role,
+} from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +47,9 @@ import {
   Lock,
   ShieldCheck,
   User as UserIcon,
+  Upload,
+  Loader2,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -62,6 +74,14 @@ const CATEGORIES = [
   "Periféricos",
   "Acessórios",
 ];
+
+const STATUS_STYLES: Record<string, string> = {
+  "Pedido confirmado": "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+  "Em separação": "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  Enviado: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  Entregue: "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300",
+  Cancelado: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+};
 
 type Admin = { name: string; email: string | null; isAdmin: boolean };
 
@@ -288,33 +308,33 @@ function DashboardTab() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
-        <Card className="lg:col-span-2 shadow-sm border-border/60">
-          <CardHeader className="border-b border-border/30 pb-4 mb-4">
-            <CardTitle className="text-lg">Vendas nos Últimos 7 Dias</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[280px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={summary.salesByDay} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
-                  <XAxis dataKey="label" fontSize={12} tickLine={false} axisLine={false} tick={{ fill: "hsl(var(--muted-foreground))" }} dy={10} />
-                  <YAxis fontSize={12} tickLine={false} axisLine={false} tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `R$${v / 1000}k`} />
-                  <Tooltip
-                    cursor={{ fill: "hsl(var(--secondary))", opacity: 0.3 }}
-                    contentStyle={{ borderRadius: "8px", border: "1px solid hsl(var(--border))", backgroundColor: "hsl(var(--card))", color: "hsl(var(--foreground))" }}
-                    formatter={(value: number) => [formatCurrency(value), "Receita"]}
-                  />
-                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+      <Card className="shadow-sm border-border/60">
+        <CardHeader className="border-b border-border/30 pb-4 mb-4">
+          <CardTitle className="text-lg">Vendas nos Últimos 7 Dias</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={summary.salesByDay} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
+                <XAxis dataKey="label" fontSize={12} tickLine={false} axisLine={false} tick={{ fill: "hsl(var(--muted-foreground))" }} dy={10} />
+                <YAxis fontSize={12} tickLine={false} axisLine={false} tick={{ fill: "hsl(var(--muted-foreground))" }} tickFormatter={(v) => `R$${v / 1000}k`} />
+                <Tooltip
+                  cursor={{ fill: "hsl(var(--secondary))", opacity: 0.3 }}
+                  contentStyle={{ borderRadius: "8px", border: "1px solid hsl(var(--border))", backgroundColor: "hsl(var(--card))", color: "hsl(var(--foreground))" }}
+                  formatter={(value: number) => [formatCurrency(value), "Receita"]}
+                />
+                <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
 
+      <div className="grid grid-cols-1 gap-6 md:gap-8 lg:grid-cols-2">
         <Card className="shadow-sm border-border/60">
           <CardHeader className="border-b border-border/30 pb-4 mb-4">
-            <CardTitle className="text-lg">Produtos Populares</CardTitle>
+            <CardTitle className="text-lg">Mais Vendidos</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -331,7 +351,35 @@ function DashboardTab() {
                 </div>
               ))}
               {summary.topProducts.length === 0 && (
-                <div className="text-center text-sm text-muted-foreground py-8">Nenhum dado disponível</div>
+                <div className="text-center text-sm text-muted-foreground py-8">Nenhuma venda registrada ainda</div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm border-border/60">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-border/30 pb-4 mb-4">
+            <CardTitle className="text-lg">Mais Acessados</CardTitle>
+            <Eye className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {summary.mostViewed.map((p, i) => (
+                <div key={p.id} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 overflow-hidden pr-2">
+                    <div className="w-8 h-8 rounded bg-secondary/60 flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0">{i + 1}</div>
+                    <div className="h-9 w-9 shrink-0 overflow-hidden rounded border border-border/50 bg-white">
+                      {p.imageUrl && <img src={p.imageUrl} alt="" className="h-full w-full object-contain p-0.5 mix-blend-multiply" />}
+                    </div>
+                    <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
+                  </div>
+                  <div className="shrink-0 font-mono text-sm font-medium text-foreground">
+                    {p.views.toLocaleString("pt-BR")} <span className="text-[11px] font-normal text-muted-foreground">visitas</span>
+                  </div>
+                </div>
+              ))}
+              {summary.mostViewed.length === 0 && (
+                <div className="text-center text-sm text-muted-foreground py-8">Nenhum acesso registrado ainda</div>
               )}
             </div>
           </CardContent>
@@ -361,7 +409,7 @@ function DashboardTab() {
                     <td className="px-6 py-4 font-medium text-foreground">{o.customerName}</td>
                     <td className="px-6 py-4 text-muted-foreground">{new Date(o.createdAt).toLocaleDateString("pt-BR")}</td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-foreground border border-border/50">{o.status}</span>
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${STATUS_STYLES[o.status] ?? "bg-secondary text-foreground border-border/50"}`}>{o.status}</span>
                     </td>
                     <td className="px-6 py-4 text-right font-mono font-medium text-foreground">{formatCurrency(o.total)}</td>
                   </tr>
@@ -396,6 +444,31 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
   const [stock, setStock] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [featured, setFeatured] = useState(false);
+  const [specs, setSpecs] = useState<ProductSpec[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addSpec = () => setSpecs((s) => [...s, { label: "", value: "" }]);
+  const removeSpec = (i: number) =>
+    setSpecs((s) => s.filter((_, idx) => idx !== i));
+  const updateSpec = (i: number, field: keyof ProductSpec, val: string) =>
+    setSpecs((s) => s.map((sp, idx) => (idx === i ? { ...sp, [field]: val } : sp)));
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadProductImage(file);
+      setImageUrl(url);
+      toast.success("Imagem enviada");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao enviar imagem");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const filteredProducts = useMemo(() => {
     if (!products) return [];
@@ -417,6 +490,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       setStock(product.stock.toString());
       setImageUrl(product.imageUrl);
       setFeatured(product.featured);
+      setSpecs(product.specs.map((s) => ({ ...s })));
     } else {
       setEditingProduct(null);
       setName("");
@@ -427,6 +501,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       setStock("");
       setImageUrl("");
       setFeatured(false);
+      setSpecs([]);
     }
     setIsModalOpen(true);
   };
@@ -447,6 +522,9 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       stock: Number(stock),
       imageUrl,
       featured,
+      specs: specs
+        .map((s) => ({ label: s.label.trim(), value: s.value.trim() }))
+        .filter((s) => s.label !== "" && s.value !== ""),
     };
 
     if (editingProduct) {
@@ -608,9 +686,79 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-foreground">URL da Imagem</label>
-                  <Input required value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="/images/produto.jpg" />
+                  <label className="text-sm font-semibold text-foreground">Imagem do Produto</label>
+                  <div className="flex items-start gap-4">
+                    <div className="h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-border/60 bg-white flex items-center justify-center">
+                      {imageUrl ? (
+                        <img src={imageUrl} alt="" className="h-full w-full object-contain p-1 mix-blend-multiply" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      ) : (
+                        <Box className="h-7 w-7 text-muted-foreground/40" />
+                      )}
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        disabled={uploading}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {uploading ? (
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Enviando...</>
+                        ) : (
+                          <><Upload className="h-4 w-4 mr-2" /> Enviar imagem</>
+                        )}
+                      </Button>
+                      <Input
+                        required
+                        value={imageUrl}
+                        onChange={(e) => setImageUrl(e.target.value)}
+                        placeholder="ou cole uma URL / caminho (/images/produto.jpg)"
+                        className="text-xs"
+                      />
+                    </div>
+                  </div>
                 </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-foreground">
+                      Especificações Técnicas <span className="font-normal text-muted-foreground">(Opcional)</span>
+                    </label>
+                    <Button type="button" variant="ghost" size="sm" className="h-8 text-xs" onClick={addSpec}>
+                      <Plus className="h-3.5 w-3.5 mr-1" /> Adicionar
+                    </Button>
+                  </div>
+                  {specs.length === 0 ? (
+                    <p className="rounded-md border border-dashed border-border/60 px-3 py-4 text-center text-xs text-muted-foreground">
+                      Nenhuma especificação. Ex: atributo &quot;Tela&quot;, valor &quot;AMOLED 6,7&quot; 120Hz&quot;.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {specs.map((s, i) => (
+                        <div key={i} className="flex gap-2">
+                          <Input
+                            value={s.label}
+                            onChange={(e) => updateSpec(i, "label", e.target.value)}
+                            placeholder="Atributo (ex: Tela)"
+                            className="w-2/5"
+                          />
+                          <Input
+                            value={s.value}
+                            onChange={(e) => updateSpec(i, "value", e.target.value)}
+                            placeholder="Valor (ex: AMOLED 120Hz)"
+                            className="flex-1"
+                          />
+                          <Button type="button" variant="outline" size="icon" className="h-10 w-10 shrink-0 hover:bg-destructive hover:text-destructive-foreground hover:border-destructive" onClick={() => removeSpec(i)}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <label className="flex items-center gap-4 p-4 border border-border/60 rounded-lg cursor-pointer hover:bg-secondary/20 transition-colors">
                   <input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} className="h-5 w-5 rounded-md border-input bg-background text-primary focus:ring-primary" />
                   <div>
@@ -635,32 +783,62 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
 
 function OrdersTab() {
   const { data: orders, isLoading } = useAdminOrders();
+  const updateStatus = useUpdateOrderStatus();
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [savingId, setSavingId] = useState<number | null>(null);
+
+  const handleStatusChange = (id: number, status: OrderStatus) => {
+    setSavingId(id);
+    updateStatus.mutate(
+      { id, status },
+      {
+        onSuccess: () =>
+          toast.success(`Pedido #${id.toString().padStart(4, "0")} → ${status}`),
+        onError: () => toast.error("Falha ao atualizar status"),
+        onSettled: () => setSavingId(null),
+      },
+    );
+  };
 
   const filteredOrders = useMemo(() => {
     if (!orders) return [];
-    if (!searchTerm) return orders;
     const lower = searchTerm.toLowerCase();
-    return orders.filter(
-      (o) =>
+    return orders.filter((o) => {
+      if (statusFilter !== "all" && o.status !== statusFilter) return false;
+      if (!searchTerm) return true;
+      return (
         o.customerName.toLowerCase().includes(lower) ||
         o.customerEmail.toLowerCase().includes(lower) ||
-        o.id.toString().includes(lower),
-    );
-  }, [orders, searchTerm]);
+        o.id.toString().includes(lower)
+      );
+    });
+  }, [orders, searchTerm, statusFilter]);
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-display font-bold text-foreground">Pedidos</h2>
-        <p className="text-sm text-muted-foreground mt-1">Acompanhamento de todas as vendas.</p>
+        <p className="text-sm text-muted-foreground mt-1">Acompanhe as vendas e atualize o status de cada pedido.</p>
       </div>
 
-      <div className="flex items-center gap-4 bg-card p-2 rounded-lg border shadow-sm">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por cliente, e-mail ou número do pedido..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 h-10" />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-1 items-center gap-4 bg-card p-2 rounded-lg border shadow-sm">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Buscar por cliente, e-mail ou número do pedido..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 h-10" />
+          </div>
         </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as "all" | OrderStatus)}
+          className="h-[52px] rounded-lg border bg-card px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:h-auto sm:py-3"
+        >
+          <option value="all">Todos os status</option>
+          {ORDER_STATUSES.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
       </div>
 
       <div className="border border-border/60 rounded-xl bg-card shadow-sm overflow-hidden">
@@ -690,7 +868,19 @@ function OrdersTab() {
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">{new Date(order.createdAt).toLocaleDateString("pt-BR")}</td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-foreground border border-border/50">{order.status}</span>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={order.status}
+                          disabled={savingId === order.id}
+                          onChange={(e) => handleStatusChange(order.id, e.target.value as OrderStatus)}
+                          className={`rounded-full border px-3 py-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60 ${STATUS_STYLES[order.status] ?? "border-border/60 bg-secondary text-foreground"}`}
+                        >
+                          {ORDER_STATUSES.map((s) => (
+                            <option key={s} value={s} className="bg-card text-foreground">{s}</option>
+                          ))}
+                        </select>
+                        {savingId === order.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-right font-mono font-bold text-foreground">{formatCurrency(order.total)}</td>
                   </tr>

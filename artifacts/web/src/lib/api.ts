@@ -5,10 +5,14 @@ import {
 } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 import type {
+  Address,
+  AddressInput,
   DashboardSummary,
   Order,
+  OrderStatus,
   Product,
   ProductInput,
+  ProductSpec,
   Profile,
   Role,
   ShippingOption,
@@ -16,6 +20,16 @@ import type {
 
 // --------------------------------------------------------------- mapeadores ---
 type Row = Record<string, unknown>;
+
+function mapSpecs(value: unknown): ProductSpec[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((s) => {
+      const row = (s ?? {}) as Record<string, unknown>;
+      return { label: String(row.label ?? ""), value: String(row.value ?? "") };
+    })
+    .filter((s) => s.label !== "" || s.value !== "");
+}
 
 function mapProduct(r: Row): Product {
   return {
@@ -29,6 +43,8 @@ function mapProduct(r: Row): Product {
     stock: r.stock as number,
     imageUrl: r.image_url as string,
     featured: Boolean(r.featured),
+    specs: mapSpecs(r.specs),
+    viewCount: Number(r.view_count ?? 0),
     rating: Number(r.rating),
     reviewCount: r.review_count as number,
     createdAt: r.created_at as string,
@@ -120,6 +136,11 @@ function toProductRow(data: Partial<ProductInput>) {
   if (data.stock !== undefined) row.stock = data.stock;
   if (data.imageUrl !== undefined) row.image_url = data.imageUrl;
   if (data.featured !== undefined) row.featured = data.featured;
+  if (data.specs !== undefined) {
+    row.specs = data.specs
+      .map((s) => ({ label: s.label.trim(), value: s.value.trim() }))
+      .filter((s) => s.label !== "" && s.value !== "");
+  }
   return row;
 }
 
@@ -183,6 +204,18 @@ export function useDeleteProduct() {
   });
 }
 
+/**
+ * Registra uma visualização de produto (métrica "mais acessados" do painel).
+ * Best-effort: qualquer erro é engolido para nunca quebrar a página.
+ */
+export async function incrementProductView(id: number): Promise<void> {
+  try {
+    await supabase.rpc("increment_product_views", { p_product_id: id });
+  } catch {
+    /* métrica não-crítica */
+  }
+}
+
 // ------------------------------------------------------------------ perfil ---
 function mapProfile(r: Row): Profile {
   return {
@@ -240,6 +273,122 @@ export function useUpdateProfile() {
   });
 }
 
+// --------------------------------------------------------------- endereços ---
+function mapAddress(r: Row): Address {
+  return {
+    id: r.id as string,
+    label: (r.label as string) ?? "Endereço",
+    recipient: (r.recipient as string) ?? "",
+    postalCode: (r.postal_code as string) ?? "",
+    street: (r.street as string) ?? "",
+    number: (r.number as string) ?? "",
+    complement: (r.complement as string) ?? null,
+    district: (r.district as string) ?? "",
+    city: (r.city as string) ?? "",
+    state: (r.state as string) ?? "",
+    isDefault: Boolean(r.is_default),
+    createdAt: r.created_at as string,
+  };
+}
+
+function toAddressRow(data: Partial<AddressInput>) {
+  const row: Row = {};
+  if (data.label !== undefined) row.label = data.label.trim() || "Endereço";
+  if (data.recipient !== undefined) row.recipient = data.recipient.trim();
+  if (data.postalCode !== undefined)
+    row.postal_code = data.postalCode.replace(/\D/g, "");
+  if (data.street !== undefined) row.street = data.street.trim();
+  if (data.number !== undefined) row.number = data.number.trim();
+  if (data.complement !== undefined) row.complement = data.complement.trim();
+  if (data.district !== undefined) row.district = data.district.trim();
+  if (data.city !== undefined) row.city = data.city.trim();
+  if (data.state !== undefined) row.state = data.state.trim().toUpperCase();
+  if (data.isDefault !== undefined) row.is_default = data.isDefault;
+  return row;
+}
+
+export function useAddresses(enabled = true) {
+  return useQuery({
+    queryKey: ["addresses"],
+    enabled,
+    queryFn: async (): Promise<Address[]> => {
+      const { data, error } = await supabase
+        .from("addresses")
+        .select("*")
+        .order("is_default", { ascending: false })
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map(mapAddress);
+    },
+  });
+}
+
+export function useCreateAddress() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: AddressInput): Promise<Address> => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error("Sessão expirada");
+      const { data, error } = await supabase
+        .from("addresses")
+        .insert({ ...toAddressRow(input), user_id: auth.user.id })
+        .select("*")
+        .single();
+      if (error) throw error;
+      return mapAddress(data);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["addresses"] }),
+  });
+}
+
+export function useUpdateAddress() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Partial<AddressInput>;
+    }): Promise<Address> => {
+      const { data: row, error } = await supabase
+        .from("addresses")
+        .update(toAddressRow(data))
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      return mapAddress(row);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["addresses"] }),
+  });
+}
+
+export function useDeleteAddress() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("addresses").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["addresses"] }),
+  });
+}
+
+export function useSetDefaultAddress() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("addresses")
+        .update({ is_default: true })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["addresses"] }),
+  });
+}
+
 // ----------------------------------------------------------------- pedidos ---
 export function useMyOrders(enabled = true) {
   return useQuery({
@@ -283,6 +432,30 @@ export function useAdminOrders(enabled = true) {
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []).map(mapOrder);
+    },
+  });
+}
+
+export function useUpdateOrderStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      status,
+    }: {
+      id: number;
+      status: OrderStatus;
+    }) => {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order", vars.id] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
   });
 }
@@ -331,7 +504,9 @@ export function useDashboardSummary(enabled = true) {
     queryFn: async (): Promise<DashboardSummary> => {
       const { data, error } = await supabase.rpc("admin_dashboard_summary");
       if (error) throw error;
-      return data as DashboardSummary;
+      const summary = data as DashboardSummary;
+      // Tolera um banco ainda sem a migração 0004 (função antiga sem mostViewed).
+      return { ...summary, mostViewed: summary.mostViewed ?? [] };
     },
   });
 }
