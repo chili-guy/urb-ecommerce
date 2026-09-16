@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useCart } from "@/lib/cart-context";
 import { useAuth } from "@/lib/auth-context";
-import { useAddresses, useProfile } from "@/lib/api";
+import { useAddresses, useProfile, previewCoupon } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { formatCep } from "@/lib/cep";
 import { useCreateOrder } from "@/lib/api";
 import { getShippingOptions } from "@/lib/shipping";
-import type { Address, ShippingOption } from "@/lib/types";
+import { trackBeginCheckout, trackPurchase } from "@/lib/analytics";
+import type { Address, CouponPreview, ShippingOption } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ShieldCheck, CheckCircle2, MapPin } from "lucide-react";
+import { ShieldCheck, CheckCircle2, MapPin, Tag, X } from "lucide-react";
 import { toast } from "sonner";
 
 function shortAddress(a: Address): string {
@@ -37,6 +38,21 @@ export default function Checkout() {
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [selectedShipping, setSelectedShipping] = useState<string>("");
   const [orderComplete, setOrderComplete] = useState<number | null>(null);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponResult, setCouponResult] = useState<CouponPreview | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+
+  // Dispara o evento de início de checkout uma vez, quando a página abre com itens.
+  const checkoutTracked = useRef(false);
+  useEffect(() => {
+    if (checkoutTracked.current || items.length === 0) return;
+    checkoutTracked.current = true;
+    trackBeginCheckout(
+      items.map((i) => ({ id: i.product.id, name: i.product.name, price: i.product.price, quantity: i.quantity })),
+      subtotal,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Pré-preenche com os dados do cliente logado (podem chegar após a montagem).
   useEffect(() => {
@@ -88,6 +104,23 @@ export default function Checkout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addresses]);
 
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) return;
+    setCouponLoading(true);
+    const result = await previewCoupon(couponCode, subtotal);
+    setCouponLoading(false);
+    setCouponResult(result);
+    if (!result.valid) toast.error(result.reason);
+    else toast.success(`Cupom ${result.code} aplicado`);
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponCode("");
+    setCouponResult(null);
+  };
+
+  const discount = couponResult?.valid ? couponResult.discount : 0;
+
   const handleCheckout = () => {
     const option = shippingOptions.find((o) => o.id === selectedShipping);
     if (!name || !email || !option) {
@@ -102,10 +135,16 @@ export default function Checkout() {
         postalCode,
         shippingOption: option,
         items: items.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
+        couponCode: couponResult?.valid ? couponResult.code : undefined,
       },
       {
         onSuccess: (order) => {
           setOrderComplete(order.id);
+          trackPurchase(
+            order.id,
+            order.total,
+            items.map((i) => ({ id: i.product.id, name: i.product.name, price: i.product.price, quantity: i.quantity })),
+          );
           clearCart();
         },
         onError: (error) => {
@@ -149,7 +188,7 @@ export default function Checkout() {
   }
 
   const selectedOption = shippingOptions.find(o => o.id === selectedShipping);
-  const total = subtotal + (selectedOption?.price || 0);
+  const total = Math.max(subtotal + (selectedOption?.price || 0) - discount, 0);
 
   return (
     <div className="container mx-auto px-4 pb-28 pt-6 sm:pt-8 lg:pb-12">
@@ -312,17 +351,49 @@ export default function Checkout() {
                 ))}
               </div>
 
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Cupom de desconto</p>
+                {couponResult?.valid ? (
+                  <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+                    <span className="flex items-center gap-1.5 font-medium text-primary">
+                      <Tag className="h-3.5 w-3.5" /> {couponResult.code}
+                    </span>
+                    <button onClick={handleRemoveCoupon} className="text-muted-foreground hover:text-foreground" aria-label="Remover cupom">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      placeholder="Código do cupom"
+                      className="h-10"
+                    />
+                    <Button variant="secondary" className="shrink-0" onClick={handleApplyCoupon} disabled={couponLoading}>
+                      {couponLoading ? "..." : "Aplicar"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-3 pt-6 border-t text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span className="font-mono">{formatCurrency(subtotal)}</span>
                 </div>
+                {discount > 0 && (
+                  <div className="flex justify-between text-primary">
+                    <span>Desconto ({couponResult?.valid ? couponResult.code : ""})</span>
+                    <span className="font-mono">-{formatCurrency(discount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Frete</span>
                   <span className="font-mono">{selectedOption ? formatCurrency(selectedOption.price) : "---"}</span>
                 </div>
               </div>
-              
+
               <div className="border-t pt-4">
                 <div className="flex items-end justify-between">
                   <span className="font-bold">Total</span>

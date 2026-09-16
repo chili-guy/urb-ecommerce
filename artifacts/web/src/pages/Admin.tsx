@@ -1,14 +1,19 @@
 import React, { useMemo, useRef, useState } from "react";
 import { Redirect } from "wouter";
 import {
+  useAdminCustomers,
   useAdminOrders,
+  useCoupons,
+  useCreateCoupon,
   useCreateProduct,
   useDashboardSummary,
+  useDeleteCoupon,
   useDeleteProduct,
   useGrantRole,
   useProducts,
   useRevokeRole,
   useTeam,
+  useUpdateCoupon,
   useUpdateOrderStatus,
   useUpdateProduct,
 } from "@/lib/api";
@@ -16,6 +21,8 @@ import { uploadProductImage } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
 import {
   ORDER_STATUSES,
+  type Coupon,
+  type CouponInput,
   type OrderStatus,
   type Product,
   type ProductInput,
@@ -26,6 +33,12 @@ import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import {
   LayoutDashboard,
   Package,
@@ -50,6 +63,11 @@ import {
   Upload,
   Loader2,
   Eye,
+  Ticket,
+  Contact,
+  BarChart3,
+  Download,
+  MoreHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -126,11 +144,19 @@ export default function Admin() {
   );
 }
 
+type AdminTab =
+  | "dashboard"
+  | "products"
+  | "orders"
+  | "coupons"
+  | "customers"
+  | "reports"
+  | "team";
+
 function AdminDashboard({ admin }: { admin: Admin }) {
   const { signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<
-    "dashboard" | "products" | "orders" | "team"
-  >("dashboard");
+  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const handleLogout = async () => {
     await signOut();
@@ -188,6 +214,9 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           <NavItem icon={LayoutDashboard} label="Visão Geral" active={activeTab === "dashboard"} onClick={() => setActiveTab("dashboard")} />
           <NavItem icon={Package} label="Catálogo" active={activeTab === "products"} onClick={() => setActiveTab("products")} />
           <NavItem icon={ShoppingCart} label="Pedidos" active={activeTab === "orders"} onClick={() => setActiveTab("orders")} />
+          <NavItem icon={Ticket} label="Cupons" active={activeTab === "coupons"} onClick={() => setActiveTab("coupons")} />
+          <NavItem icon={Contact} label="Clientes" active={activeTab === "customers"} onClick={() => setActiveTab("customers")} />
+          <NavItem icon={BarChart3} label="Relatórios" active={activeTab === "reports"} onClick={() => setActiveTab("reports")} />
           <div className="pt-4 pb-2">
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4">
               Administração
@@ -219,8 +248,39 @@ function AdminDashboard({ admin }: { admin: Admin }) {
         <button onClick={() => setActiveTab("dashboard")} className={`p-3 rounded-lg ${activeTab === "dashboard" ? "bg-primary/10 text-primary" : ""}`}><LayoutDashboard className="h-5 w-5" /></button>
         <button onClick={() => setActiveTab("products")} className={`p-3 rounded-lg ${activeTab === "products" ? "bg-primary/10 text-primary" : ""}`}><Package className="h-5 w-5" /></button>
         <button onClick={() => setActiveTab("orders")} className={`p-3 rounded-lg ${activeTab === "orders" ? "bg-primary/10 text-primary" : ""}`}><ShoppingCart className="h-5 w-5" /></button>
-        {admin.isAdmin && <button onClick={() => setActiveTab("team")} className={`p-3 rounded-lg ${activeTab === "team" ? "bg-primary/10 text-primary" : ""}`}><Users className="h-5 w-5" /></button>}
-        <button onClick={handleLogout} className="p-3 text-muted-foreground"><LogOut className="h-5 w-5" /></button>
+        <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+          <SheetTrigger asChild>
+            <button
+              className={`p-3 rounded-lg ${
+                ["coupons", "customers", "reports", "team"].includes(activeTab) ? "bg-primary/10 text-primary" : ""
+              }`}
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+          </SheetTrigger>
+          <SheetContent side="bottom" className="rounded-t-2xl">
+            <SheetTitle>Mais opções</SheetTitle>
+            <div className="mt-4 space-y-1.5 pb-4">
+              <button onClick={() => { setActiveTab("coupons"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "coupons" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
+                <Ticket className="h-4 w-4" /> Cupons
+              </button>
+              <button onClick={() => { setActiveTab("customers"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "customers" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
+                <Contact className="h-4 w-4" /> Clientes
+              </button>
+              <button onClick={() => { setActiveTab("reports"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "reports" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
+                <BarChart3 className="h-4 w-4" /> Relatórios
+              </button>
+              {admin.isAdmin && (
+                <button onClick={() => { setActiveTab("team"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "team" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
+                  <Users className="h-4 w-4" /> Equipe
+                </button>
+              )}
+              <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium text-destructive hover:bg-destructive/10">
+                <LogOut className="h-4 w-4" /> Encerrar sessão
+              </button>
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
 
       <main className="flex-1 overflow-y-auto relative bg-background pb-20 md:pb-0">
@@ -229,6 +289,9 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           {activeTab === "dashboard" && <DashboardTab />}
           {activeTab === "products" && <ProductsTab isAdmin={admin.isAdmin} />}
           {activeTab === "orders" && <OrdersTab />}
+          {activeTab === "coupons" && <CouponsTab />}
+          {activeTab === "customers" && <CustomersTab />}
+          {activeTab === "reports" && <ReportsTab />}
           {activeTab === "team" && admin.isAdmin && <TeamTab />}
         </div>
       </main>
@@ -443,10 +506,18 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
   const [comparePrice, setComparePrice] = useState("");
   const [stock, setStock] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [images, setImages] = useState<string[]>([]);
+  const [sku, setSku] = useState("");
+  const [subcategory, setSubcategory] = useState("");
+  const [variantGroup, setVariantGroup] = useState("");
+  const [variantLabel, setVariantLabel] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
   const [featured, setFeatured] = useState(false);
   const [specs, setSpecs] = useState<ProductSpec[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const addSpec = () => setSpecs((s) => [...s, { label: "", value: "" }]);
   const removeSpec = (i: number) =>
@@ -470,6 +541,25 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
     }
   };
 
+  const handleGalleryFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+    setUploadingGallery(true);
+    try {
+      const urls = await Promise.all(files.map((f) => uploadProductImage(f)));
+      setImages((prev) => [...prev, ...urls]);
+      toast.success(`${urls.length} imagem(ns) adicionada(s) à galeria`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao enviar imagens");
+    } finally {
+      setUploadingGallery(false);
+    }
+  };
+
+  const removeGalleryImage = (i: number) =>
+    setImages((prev) => prev.filter((_, idx) => idx !== i));
+
   const filteredProducts = useMemo(() => {
     if (!products) return [];
     if (!searchTerm) return products;
@@ -489,6 +579,12 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       setComparePrice(product.compareAtPrice?.toString() || "");
       setStock(product.stock.toString());
       setImageUrl(product.imageUrl);
+      setImages([...product.images]);
+      setSku(product.sku ?? "");
+      setSubcategory(product.subcategory ?? "");
+      setVariantGroup(product.variantGroup ?? "");
+      setVariantLabel(product.variantLabel ?? "");
+      setVideoUrl(product.videoUrl ?? "");
       setFeatured(product.featured);
       setSpecs(product.specs.map((s) => ({ ...s })));
     } else {
@@ -500,6 +596,12 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       setComparePrice("");
       setStock("");
       setImageUrl("");
+      setImages([]);
+      setSku("");
+      setSubcategory("");
+      setVariantGroup("");
+      setVariantLabel("");
+      setVideoUrl("");
       setFeatured(false);
       setSpecs([]);
     }
@@ -521,6 +623,12 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       compareAtPrice: comparePrice ? Number(comparePrice) : null,
       stock: Number(stock),
       imageUrl,
+      images,
+      sku,
+      subcategory,
+      variantGroup,
+      variantLabel,
+      videoUrl,
       featured,
       specs: specs
         .map((s) => ({ label: s.label.trim(), value: s.value.trim() }))
@@ -613,6 +721,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                         </div>
                         <div>
                           <div className="font-semibold text-foreground line-clamp-1">{product.name}</div>
+                          {product.sku && <div className="font-mono text-[11px] text-muted-foreground">{product.sku}</div>}
                           {product.featured && <span className="inline-block mt-1 text-[10px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Destaque</span>}
                         </div>
                       </div>
@@ -719,6 +828,64 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                       />
                     </div>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">
+                    Galeria de imagens <span className="font-normal text-muted-foreground">(Opcional)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {images.map((src, i) => (
+                      <div key={i} className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/60 bg-white">
+                        <img src={src} alt="" className="h-full w-full object-contain p-1 mix-blend-multiply" />
+                        <button
+                          type="button"
+                          onClick={() => removeGalleryImage(i)}
+                          className="absolute -right-1 -top-1 rounded-full bg-destructive p-0.5 text-destructive-foreground"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => galleryInputRef.current?.click()}
+                      disabled={uploadingGallery}
+                      className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-border/60 text-muted-foreground hover:border-primary/50"
+                    >
+                      {uploadingGallery ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    </button>
+                    <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryFiles} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Fotos extras mostradas na galeria da página do produto.</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">SKU <span className="font-normal text-muted-foreground">(Opcional)</span></label>
+                    <Input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Ex: UR3-NB-VTX14" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">Subcategoria <span className="font-normal text-muted-foreground">(Opcional)</span></label>
+                    <Input value={subcategory} onChange={(e) => setSubcategory(e.target.value)} placeholder="Ex: Ultrabooks" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">Grupo de variação <span className="font-normal text-muted-foreground">(Opcional)</span></label>
+                    <Input value={variantGroup} onChange={(e) => setVariantGroup(e.target.value)} placeholder="Ex: smartphone-pulse-5g" />
+                    <p className="text-xs text-muted-foreground">Produtos com o mesmo grupo viram variações um do outro na página.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">Rótulo da variação <span className="font-normal text-muted-foreground">(Opcional)</span></label>
+                    <Input value={variantLabel} onChange={(e) => setVariantLabel(e.target.value)} placeholder="Ex: Preto 256GB" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">Vídeo do YouTube <span className="font-normal text-muted-foreground">(Opcional)</span></label>
+                  <Input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=..." />
                 </div>
 
                 <div className="space-y-3">
@@ -890,6 +1057,450 @@ function OrdersTab() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+const EMPTY_COUPON_FORM = {
+  code: "",
+  type: "percent" as "percent" | "fixed",
+  value: "10",
+  minOrder: "0",
+  maxUses: "",
+  expiresAt: "",
+  active: true,
+};
+
+function CouponsTab() {
+  const { data: coupons, isLoading } = useCoupons();
+  const createCoupon = useCreateCoupon();
+  const updateCoupon = useUpdateCoupon();
+  const deleteCoupon = useDeleteCoupon();
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState(EMPTY_COUPON_FORM);
+
+  const openModal = (coupon?: Coupon) => {
+    if (coupon) {
+      setEditingId(coupon.id);
+      setForm({
+        code: coupon.code,
+        type: coupon.type,
+        value: String(coupon.value),
+        minOrder: String(coupon.minOrder),
+        maxUses: coupon.maxUses != null ? String(coupon.maxUses) : "",
+        expiresAt: coupon.expiresAt ? coupon.expiresAt.slice(0, 10) : "",
+        active: coupon.active,
+      });
+    } else {
+      setEditingId(null);
+      setForm(EMPTY_COUPON_FORM);
+    }
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingId(null);
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = form.code.trim();
+    if (!code) {
+      toast.error("Informe um código para o cupom");
+      return;
+    }
+    const data: CouponInput = {
+      code,
+      type: form.type,
+      value: Number(form.value),
+      minOrder: form.minOrder ? Number(form.minOrder) : 0,
+      maxUses: form.maxUses ? Number(form.maxUses) : null,
+      expiresAt: form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).toISOString() : null,
+      active: form.active,
+    };
+    if (editingId) {
+      updateCoupon.mutate(
+        { id: editingId, data },
+        {
+          onSuccess: () => {
+            toast.success("Cupom atualizado");
+            closeModal();
+          },
+          onError: () => toast.error("Falha ao salvar. Verifique se o código já existe."),
+        },
+      );
+    } else {
+      createCoupon.mutate(data, {
+        onSuccess: () => {
+          toast.success("Cupom criado");
+          closeModal();
+        },
+        onError: () => toast.error("Falha ao criar. Verifique se o código já existe."),
+      });
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Excluir este cupom? A ação não pode ser desfeita.")) {
+      deleteCoupon.mutate(id, {
+        onSuccess: () => toast.success("Cupom excluído"),
+        onError: () => toast.error("Falha ao excluir cupom"),
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-display font-bold text-foreground">Cupons</h2>
+          <p className="text-sm text-muted-foreground mt-1">Crie e gerencie códigos de desconto para o checkout.</p>
+        </div>
+        <Button onClick={() => openModal()} className="jurb-cta shadow-md">
+          <Plus className="h-4 w-4 mr-2" /> Novo Cupom
+        </Button>
+      </div>
+
+      <div className="border border-border/60 rounded-xl bg-card shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-secondary/30 text-muted-foreground text-xs uppercase tracking-wider font-semibold border-b border-border/50">
+              <tr>
+                <th className="px-6 py-4">Código</th>
+                <th className="px-6 py-4">Desconto</th>
+                <th className="px-6 py-4">Pedido mínimo</th>
+                <th className="px-6 py-4">Usos</th>
+                <th className="px-6 py-4">Validade</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {isLoading ? (
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">Carregando cupons...</td></tr>
+              ) : !coupons || coupons.length === 0 ? (
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">Nenhum cupom criado ainda.</td></tr>
+              ) : (
+                coupons.map((c) => {
+                  const expired = c.expiresAt ? new Date(c.expiresAt) < new Date() : false;
+                  const exhausted = c.maxUses != null && c.usedCount >= c.maxUses;
+                  return (
+                    <tr key={c.id} className="hover:bg-secondary/10 transition-colors group">
+                      <td className="px-6 py-4 font-mono font-bold text-foreground">{c.code}</td>
+                      <td className="px-6 py-4 text-foreground">
+                        {c.type === "percent" ? `${c.value}%` : formatCurrency(c.value)}
+                      </td>
+                      <td className="px-6 py-4 text-muted-foreground">{c.minOrder > 0 ? formatCurrency(c.minOrder) : "—"}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{c.usedCount}{c.maxUses != null ? ` / ${c.maxUses}` : ""}</td>
+                      <td className="px-6 py-4 text-muted-foreground">{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString("pt-BR") : "Sem validade"}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${
+                          !c.active
+                            ? "bg-secondary text-muted-foreground border-border/50"
+                            : expired || exhausted
+                              ? "bg-destructive/10 text-destructive border-destructive/20"
+                              : "bg-green-500/10 text-green-700 border-green-500/30 dark:text-green-300"
+                        }`}>
+                          {!c.active ? "Inativo" : expired ? "Expirado" : exhausted ? "Esgotado" : "Ativo"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex justify-end gap-2 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => openModal(c)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="outline" size="icon" className="h-8 w-8 hover:bg-destructive hover:text-destructive-foreground hover:border-destructive" onClick={() => handleDelete(c.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border border-border shadow-2xl rounded-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-6 border-b border-border/50 shrink-0">
+              <h2 className="text-xl font-display font-bold text-foreground">{editingId ? "Editar Cupom" : "Novo Cupom"}</h2>
+              <button onClick={closeModal} className="text-muted-foreground hover:text-foreground transition-colors bg-secondary/50 p-2 rounded-full hover:bg-secondary">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-6">
+              <form id="coupon-form" onSubmit={handleSave} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">Código</label>
+                  <Input
+                    required
+                    value={form.code}
+                    onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))}
+                    placeholder="Ex: BEMVINDO10"
+                    className="font-mono uppercase"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">Tipo</label>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      value={form.type}
+                      onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "percent" | "fixed" }))}
+                    >
+                      <option value="percent">Percentual (%)</option>
+                      <option value="fixed">Valor fixo (R$)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">Valor</label>
+                    <Input required type="number" min="0" step="0.01" value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">Pedido mínimo (R$)</label>
+                    <Input type="number" min="0" step="0.01" value={form.minOrder} onChange={(e) => setForm((f) => ({ ...f, minOrder: e.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">Limite de usos <span className="font-normal text-muted-foreground">(Opcional)</span></label>
+                    <Input type="number" min="1" value={form.maxUses} onChange={(e) => setForm((f) => ({ ...f, maxUses: e.target.value }))} placeholder="Ilimitado" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">Válido até <span className="font-normal text-muted-foreground">(Opcional)</span></label>
+                  <Input type="date" value={form.expiresAt} onChange={(e) => setForm((f) => ({ ...f, expiresAt: e.target.value }))} />
+                </div>
+                <label className="flex items-center gap-4 p-4 border border-border/60 rounded-lg cursor-pointer hover:bg-secondary/20 transition-colors">
+                  <input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} className="h-5 w-5 rounded-md border-input bg-background text-primary focus:ring-primary" />
+                  <div>
+                    <div className="font-semibold text-sm text-foreground">Cupom ativo</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">Desative para suspender sem apagar o histórico de uso</div>
+                  </div>
+                </label>
+              </form>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t border-border/50 shrink-0 bg-secondary/10">
+              <Button type="button" variant="outline" onClick={closeModal}>Cancelar</Button>
+              <Button type="submit" form="coupon-form" className="jurb-cta" disabled={createCoupon.isPending || updateCoupon.isPending}>
+                {editingId ? "Salvar Alterações" : "Criar Cupom"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CustomersTab() {
+  const { data: customers, isLoading } = useAdminCustomers();
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!customers) return [];
+    if (!searchTerm) return customers;
+    const lower = searchTerm.toLowerCase();
+    return customers.filter(
+      (c) => c.name.toLowerCase().includes(lower) || (c.email ?? "").toLowerCase().includes(lower),
+    );
+  }, [customers, searchTerm]);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-display font-bold text-foreground">Clientes</h2>
+        <p className="text-sm text-muted-foreground mt-1">Todas as contas cadastradas na loja.</p>
+      </div>
+
+      <div className="flex items-center gap-4 bg-card p-2 rounded-lg border shadow-sm">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Buscar por nome ou e-mail..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 h-10" />
+        </div>
+      </div>
+
+      <div className="border border-border/60 rounded-xl bg-card shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-secondary/30 text-muted-foreground text-xs uppercase tracking-wider font-semibold border-b border-border/50">
+              <tr>
+                <th className="px-6 py-4">Cliente</th>
+                <th className="px-6 py-4">Cadastro</th>
+                <th className="px-6 py-4">Pedidos</th>
+                <th className="px-6 py-4">Última compra</th>
+                <th className="px-6 py-4 text-right">Total gasto</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {isLoading ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">Carregando clientes...</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">Nenhum cliente encontrado.</td></tr>
+              ) : (
+                filtered.map((c) => (
+                  <tr key={c.id} className="hover:bg-secondary/10 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-sm shrink-0 border border-primary/30">
+                          {(c.name || c.email || "?").charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="font-semibold text-foreground">{c.name || "—"}</div>
+                          <div className="text-xs text-muted-foreground">{c.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-muted-foreground">{new Date(c.createdAt).toLocaleDateString("pt-BR")}</td>
+                    <td className="px-6 py-4 text-foreground">{c.ordersCount}</td>
+                    <td className="px-6 py-4 text-muted-foreground">{c.lastOrderAt ? new Date(c.lastOrderAt).toLocaleDateString("pt-BR") : "—"}</td>
+                    <td className="px-6 py-4 text-right font-mono font-medium text-foreground">{formatCurrency(c.totalSpent)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function toDateInputValue(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function ReportsTab() {
+  const { data: orders, isLoading } = useAdminOrders();
+  const [from, setFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return toDateInputValue(d);
+  });
+  const [to, setTo] = useState(() => toDateInputValue(new Date()));
+
+  const filtered = useMemo(() => {
+    if (!orders) return [];
+    const fromTime = new Date(`${from}T00:00:00`).getTime();
+    const toTime = new Date(`${to}T23:59:59`).getTime();
+    return orders.filter((o) => {
+      const t = new Date(o.createdAt).getTime();
+      return t >= fromTime && t <= toTime;
+    });
+  }, [orders, from, to]);
+
+  const revenue = filtered.reduce((sum, o) => sum + o.total, 0);
+  const avgTicket = filtered.length ? revenue / filtered.length : 0;
+  const totalDiscount = filtered.reduce((sum, o) => sum + o.discount, 0);
+
+  const byStatus = useMemo(() => {
+    const map = new Map<string, number>();
+    filtered.forEach((o) => map.set(o.status, (map.get(o.status) ?? 0) + 1));
+    return [...map.entries()];
+  }, [filtered]);
+
+  const handleExportCsv = () => {
+    const header = ["Pedido", "Data", "Cliente", "E-mail", "Subtotal", "Frete", "Desconto", "Total", "Status"];
+    const rows = filtered.map((o) => [
+      o.id,
+      new Date(o.createdAt).toLocaleString("pt-BR"),
+      o.customerName,
+      o.customerEmail,
+      o.subtotal.toFixed(2),
+      o.shipping.toFixed(2),
+      o.discount.toFixed(2),
+      o.total.toFixed(2),
+      o.status,
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(";"))
+      .join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pedidos-ur3-${from}-a-${to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-display font-bold text-foreground">Relatórios</h2>
+          <p className="text-sm text-muted-foreground mt-1">Vendas por período, prontas para exportar.</p>
+        </div>
+        <Button onClick={handleExportCsv} variant="outline" disabled={filtered.length === 0}>
+          <Download className="h-4 w-4 mr-2" /> Exportar CSV
+        </Button>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3 bg-card p-4 rounded-lg border shadow-sm">
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase">De</label>
+          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-10" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-muted-foreground uppercase">Até</label>
+          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-10" />
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="h-40 animate-pulse rounded-xl bg-secondary" />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Receita no período</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-bold font-mono text-foreground">{formatCurrency(revenue)}</div></CardContent>
+            </Card>
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Pedidos</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-bold text-foreground">{filtered.length}</div></CardContent>
+            </Card>
+            <Card className="border-border/60 shadow-sm">
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Ticket médio</CardTitle></CardHeader>
+              <CardContent><div className="text-2xl font-bold font-mono text-foreground">{formatCurrency(avgTicket)}</div></CardContent>
+            </Card>
+          </div>
+
+          {totalDiscount > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Total de descontos concedidos no período:{" "}
+              <span className="font-mono font-medium text-foreground">{formatCurrency(totalDiscount)}</span>
+            </p>
+          )}
+
+          <Card className="shadow-sm border-border/60">
+            <CardHeader className="border-b border-border/30 pb-4 mb-4">
+              <CardTitle className="text-lg">Pedidos por status</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {byStatus.length === 0 ? (
+                <div className="text-center text-sm text-muted-foreground py-8">Nenhum pedido no período.</div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                  {byStatus.map(([status, count]) => (
+                    <div key={status} className={`rounded-lg border p-3 text-center ${STATUS_STYLES[status] ?? "border-border/60 bg-secondary"}`}>
+                      <div className="text-xl font-bold">{count}</div>
+                      <div className="text-[11px] font-medium">{status}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

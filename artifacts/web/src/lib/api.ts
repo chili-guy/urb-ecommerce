@@ -7,6 +7,10 @@ import { supabase } from "./supabase";
 import type {
   Address,
   AddressInput,
+  Coupon,
+  CouponInput,
+  CouponPreview,
+  CustomerSummary,
   DashboardSummary,
   Order,
   OrderStatus,
@@ -14,6 +18,8 @@ import type {
   ProductInput,
   ProductSpec,
   Profile,
+  Review,
+  ReviewInput,
   Role,
   ShippingOption,
 } from "./types";
@@ -31,6 +37,11 @@ function mapSpecs(value: unknown): ProductSpec[] {
     .filter((s) => s.label !== "" || s.value !== "");
 }
 
+function mapImages(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && v.trim() !== "");
+}
+
 function mapProduct(r: Row): Product {
   return {
     id: r.id as number,
@@ -38,10 +49,16 @@ function mapProduct(r: Row): Product {
     slug: r.slug as string,
     description: r.description as string,
     category: r.category as string,
+    subcategory: (r.subcategory as string) || null,
+    sku: (r.sku as string) || null,
+    variantGroup: (r.variant_group as string) || null,
+    variantLabel: (r.variant_label as string) || null,
     price: Number(r.price),
     compareAtPrice: r.compare_at_price == null ? null : Number(r.compare_at_price),
     stock: r.stock as number,
     imageUrl: r.image_url as string,
+    images: mapImages(r.images),
+    videoUrl: (r.video_url as string) || null,
     featured: Boolean(r.featured),
     specs: mapSpecs(r.specs),
     viewCount: Number(r.view_count ?? 0),
@@ -66,6 +83,8 @@ function mapOrder(r: Row): Order {
     status: r.status as string,
     subtotal: Number(r.subtotal),
     shipping: Number(r.shipping),
+    discount: Number(r.discount ?? 0),
+    couponCode: (r.coupon_code as string) ?? null,
     total: Number(r.total),
     shippingOption: r.shipping_option as ShippingOption,
     items,
@@ -76,25 +95,51 @@ function mapOrder(r: Row): Order {
 const ORDER_SELECT = "*, order_items(*)";
 
 // ----------------------------------------------------------------- produtos ---
+export type ProductSort = "relevance" | "price-asc" | "price-desc" | "rating" | "newest";
+
 export type ProductQuery = {
   search?: string;
   category?: string;
+  subcategory?: string;
   featured?: boolean;
   limit?: number;
+  minPrice?: number;
+  maxPrice?: number;
+  minRating?: number;
+  inStock?: boolean;
+  sort?: ProductSort;
 };
 
 async function fetchProducts(params: ProductQuery): Promise<Product[]> {
-  let q = supabase
-    .from("products")
-    .select("*")
-    .order("featured", { ascending: false })
-    .order("created_at", { ascending: false });
+  let q = supabase.from("products").select("*");
 
   if (params.featured !== undefined) q = q.eq("featured", params.featured);
   if (params.category) q = q.eq("category", params.category);
+  if (params.subcategory) q = q.eq("subcategory", params.subcategory);
   if (params.search) {
     const term = params.search.replace(/[%,]/g, "");
     q = q.or(`name.ilike.%${term}%,description.ilike.%${term}%`);
+  }
+  if (params.minPrice !== undefined) q = q.gte("price", params.minPrice);
+  if (params.maxPrice !== undefined) q = q.lte("price", params.maxPrice);
+  if (params.minRating !== undefined) q = q.gte("rating", params.minRating);
+  if (params.inStock) q = q.gt("stock", 0);
+
+  switch (params.sort) {
+    case "price-asc":
+      q = q.order("price", { ascending: true });
+      break;
+    case "price-desc":
+      q = q.order("price", { ascending: false });
+      break;
+    case "rating":
+      q = q.order("rating", { ascending: false });
+      break;
+    case "newest":
+      q = q.order("created_at", { ascending: false });
+      break;
+    default:
+      q = q.order("featured", { ascending: false }).order("created_at", { ascending: false });
   }
   if (params.limit) q = q.limit(params.limit);
 
@@ -131,10 +176,18 @@ function toProductRow(data: Partial<ProductInput>) {
   if (data.name !== undefined) row.name = data.name;
   if (data.description !== undefined) row.description = data.description;
   if (data.category !== undefined) row.category = data.category;
+  if (data.subcategory !== undefined) row.subcategory = data.subcategory.trim() || null;
+  if (data.sku !== undefined) row.sku = data.sku.trim() || null;
+  if (data.variantGroup !== undefined) row.variant_group = data.variantGroup.trim() || null;
+  if (data.variantLabel !== undefined) row.variant_label = data.variantLabel.trim() || null;
   if (data.price !== undefined) row.price = data.price;
   if (data.compareAtPrice !== undefined) row.compare_at_price = data.compareAtPrice;
   if (data.stock !== undefined) row.stock = data.stock;
   if (data.imageUrl !== undefined) row.image_url = data.imageUrl;
+  if (data.images !== undefined) {
+    row.images = data.images.map((s) => s.trim()).filter((s) => s !== "");
+  }
+  if (data.videoUrl !== undefined) row.video_url = data.videoUrl.trim() || null;
   if (data.featured !== undefined) row.featured = data.featured;
   if (data.specs !== undefined) {
     row.specs = data.specs
@@ -142,6 +195,23 @@ function toProductRow(data: Partial<ProductInput>) {
       .filter((s) => s.label !== "" && s.value !== "");
   }
   return row;
+}
+
+/** Produtos-irmãos (mesma variant_group) — usados como seletor de variação no PDP. */
+export function useProductVariants(variantGroup: string | null) {
+  return useQuery({
+    queryKey: ["product-variants", variantGroup],
+    enabled: !!variantGroup,
+    queryFn: async (): Promise<Product[]> => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("variant_group", variantGroup as string)
+        .order("variant_label", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map(mapProduct);
+    },
+  });
 }
 
 export function useCreateProduct() {
@@ -214,6 +284,66 @@ export async function incrementProductView(id: number): Promise<void> {
   } catch {
     /* métrica não-crítica */
   }
+}
+
+// -------------------------------------------------------------- avaliações ---
+function mapReview(r: Row): Review {
+  return {
+    id: r.id as number,
+    productId: r.product_id as number,
+    userId: r.user_id as string,
+    author: (r.author as string) ?? "",
+    rating: r.rating as number,
+    comment: (r.comment as string) ?? "",
+    createdAt: r.created_at as string,
+  };
+}
+
+export function useProductReviews(productId: number, enabled = true) {
+  return useQuery({
+    queryKey: ["product-reviews", productId],
+    enabled: enabled && Number.isFinite(productId),
+    queryFn: async (): Promise<Review[]> => {
+      const { data, error } = await supabase
+        .from("product_reviews")
+        .select("*")
+        .eq("product_id", productId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapReview);
+    },
+  });
+}
+
+export function useCreateReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: ReviewInput): Promise<Review> => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) throw new Error("Entre na sua conta para avaliar.");
+      const { data, error } = await supabase
+        .from("product_reviews")
+        .upsert(
+          {
+            product_id: input.productId,
+            user_id: auth.user.id,
+            author: input.author.trim(),
+            rating: input.rating,
+            comment: input.comment.trim(),
+          },
+          { onConflict: "product_id,user_id" },
+        )
+        .select("*")
+        .single();
+      if (error) throw error;
+      return mapReview(data);
+    },
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["product-reviews", vars.productId] });
+      qc.invalidateQueries({ queryKey: ["product", vars.productId] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
 }
 
 // ------------------------------------------------------------------ perfil ---
@@ -466,19 +596,28 @@ export type CreateOrderInput = {
   customerName: string;
   customerEmail: string;
   postalCode: string;
+  couponCode?: string | null;
 };
 
 export function useCreateOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateOrderInput): Promise<Order> => {
-      const { data: orderId, error } = await supabase.rpc("create_order", {
+      const basePayload = {
         p_items: input.items,
         p_shipping_option: input.shippingOption,
         p_customer_name: input.customerName,
         p_customer_email: input.customerEmail,
         p_postal_code: input.postalCode,
+      };
+      let { data: orderId, error } = await supabase.rpc("create_order", {
+        ...basePayload,
+        p_coupon_code: input.couponCode || null,
       });
+      if (error?.code === "PGRST202" && !input.couponCode) {
+        // Banco ainda sem a migração 0005 — cai para o create_order sem cupom.
+        ({ data: orderId, error } = await supabase.rpc("create_order", basePayload));
+      }
       if (error) throw error;
       const { data, error: fetchError } = await supabase
         .from("orders")
@@ -494,6 +633,18 @@ export function useCreateOrder() {
       qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
   });
+}
+
+/** Confere um cupom sem aplicá-lo — usado no botão "Aplicar" do checkout. */
+export async function previewCoupon(code: string, subtotal: number): Promise<CouponPreview> {
+  const { data, error } = await supabase.rpc("preview_coupon", {
+    p_code: code,
+    p_subtotal: subtotal,
+  });
+  if (error) {
+    return { valid: false, reason: "Não foi possível validar o cupom agora." };
+  }
+  return data as CouponPreview;
 }
 
 // --------------------------------------------------------------- dashboard ---
@@ -599,5 +750,119 @@ export function useRevokeRole() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["team"] }),
+  });
+}
+
+// ----------------------------------------------------------------- cupons ---
+function mapCoupon(r: Row): Coupon {
+  return {
+    id: r.id as number,
+    code: r.code as string,
+    type: r.type as "percent" | "fixed",
+    value: Number(r.value),
+    minOrder: Number(r.min_order ?? 0),
+    maxUses: r.max_uses == null ? null : Number(r.max_uses),
+    usedCount: Number(r.used_count ?? 0),
+    expiresAt: (r.expires_at as string) ?? null,
+    active: Boolean(r.active),
+    createdAt: r.created_at as string,
+  };
+}
+
+function toCouponRow(data: Partial<CouponInput>) {
+  const row: Row = {};
+  if (data.code !== undefined) row.code = data.code.trim().toUpperCase();
+  if (data.type !== undefined) row.type = data.type;
+  if (data.value !== undefined) row.value = data.value;
+  if (data.minOrder !== undefined) row.min_order = data.minOrder;
+  if (data.maxUses !== undefined) row.max_uses = data.maxUses;
+  if (data.expiresAt !== undefined) row.expires_at = data.expiresAt;
+  if (data.active !== undefined) row.active = data.active;
+  return row;
+}
+
+export function useCoupons(enabled = true) {
+  return useQuery({
+    queryKey: ["coupons"],
+    enabled,
+    queryFn: async (): Promise<Coupon[]> => {
+      const { data, error } = await supabase
+        .from("coupons")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map(mapCoupon);
+    },
+  });
+}
+
+export function useCreateCoupon() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CouponInput): Promise<Coupon> => {
+      const { data, error } = await supabase
+        .from("coupons")
+        .insert(toCouponRow(input))
+        .select("*")
+        .single();
+      if (error) throw error;
+      return mapCoupon(data);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["coupons"] }),
+  });
+}
+
+export function useUpdateCoupon() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: number;
+      data: Partial<CouponInput>;
+    }): Promise<Coupon> => {
+      const { data: row, error } = await supabase
+        .from("coupons")
+        .update(toCouponRow(data))
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      return mapCoupon(row);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["coupons"] }),
+  });
+}
+
+export function useDeleteCoupon() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await supabase.from("coupons").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["coupons"] }),
+  });
+}
+
+// --------------------------------------------------------------- clientes ---
+export function useAdminCustomers(enabled = true) {
+  return useQuery({
+    queryKey: ["admin-customers"],
+    enabled,
+    queryFn: async (): Promise<CustomerSummary[]> => {
+      const { data, error } = await supabase.rpc("admin_customers_summary");
+      if (error) throw error;
+      return ((data ?? []) as Row[]).map((r) => ({
+        id: r.id as string,
+        name: (r.name as string) || "",
+        email: (r.email as string) ?? null,
+        createdAt: r.createdAt as string,
+        ordersCount: Number(r.ordersCount ?? 0),
+        totalSpent: Number(r.totalSpent ?? 0),
+        lastOrderAt: (r.lastOrderAt as string) ?? null,
+      }));
+    },
   });
 }

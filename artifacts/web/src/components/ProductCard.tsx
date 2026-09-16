@@ -1,15 +1,32 @@
+import { useState, type MouseEvent } from "react";
 import { Link } from "wouter";
 import { formatCurrency } from "@/lib/utils";
 import type { Product } from "@/lib/types";
 import { Rocket, ShoppingCart, Star } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
+import { trackAddToCart } from "@/lib/analytics";
 
 export function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
+  const [activeImage, setActiveImage] = useState(0);
+  // A 1ª foto usa a versão "-transparent.png" (recorte de fundo do catálogo
+  // seed); as demais são as imagens de galeria cadastradas no admin, tal qual.
   const transparentImageUrl = product.imageUrl.replace(
     /\.(jpe?g|webp)$/i,
     "-transparent.png",
   );
+  const gallery = [transparentImageUrl, ...product.images];
+  const activeSrc = activeImage === 0 ? transparentImageUrl : gallery[activeImage];
+
+  // Passar o mouse sobre a foto alterna entre as imagens (estilo Mercado Livre).
+  const handleGalleryHover = (event: MouseEvent<HTMLDivElement>) => {
+    if (gallery.length <= 1) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientX - rect.left) / rect.width;
+    const index = Math.min(gallery.length - 1, Math.max(0, Math.floor(ratio * gallery.length)));
+    setActiveImage(index);
+  };
+
   const hasDiscount =
     product.compareAtPrice !== null &&
     product.compareAtPrice !== undefined &&
@@ -22,10 +39,11 @@ export function ProductCard({ product }: { product: Product }) {
     : 0;
   const installmentValue = product.price / 12;
 
-  const handleAdd = (event: React.MouseEvent<HTMLButtonElement>) => {
+  const handleAdd = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
     addItem(product, 1);
+    trackAddToCart({ id: product.id, name: product.name, price: product.price, category: product.category });
   };
 
   return (
@@ -37,13 +55,18 @@ export function ProductCard({ product }: { product: Product }) {
           </span>
         )}
 
-        <div className="flex h-[150px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-2 sm:h-[250px] sm:rounded-xl sm:px-4 sm:pt-4">
+        <div
+          className="relative flex h-[150px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-2 sm:h-[250px] sm:rounded-xl sm:px-4 sm:pt-4"
+          onMouseMove={handleGalleryHover}
+          onMouseLeave={() => setActiveImage(0)}
+        >
           <img
-            src={transparentImageUrl}
+            key={activeImage}
+            src={activeSrc}
             alt={product.name}
             className="jurb-catalog-card-image h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.045] sm:h-[270px] sm:w-[270px] sm:max-w-none"
             onError={(event) => {
-              if (event.currentTarget.dataset.fallback !== "original") {
+              if (activeImage === 0 && event.currentTarget.dataset.fallback !== "original") {
                 event.currentTarget.dataset.fallback = "original";
                 event.currentTarget.src = product.imageUrl;
                 return;
@@ -53,6 +76,19 @@ export function ProductCard({ product }: { product: Product }) {
             loading="lazy"
             decoding="async"
           />
+
+          {gallery.length > 1 && (
+            <div className="absolute bottom-1.5 left-1/2 z-10 flex -translate-x-1/2 gap-1 sm:bottom-2.5">
+              {gallery.map((_, i) => (
+                <span
+                  key={i}
+                  className={`h-1.5 rounded-full shadow-sm transition-all ${
+                    i === activeImage ? "w-3.5 bg-primary" : "w-1.5 bg-[#111820]/25"
+                  }`}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="mt-1 flex flex-1 flex-col px-0.5 sm:px-1">

@@ -13,10 +13,19 @@ export type Product = {
   slug: string;
   description: string;
   category: string;
+  subcategory: string | null;
+  sku: string | null;
+  /** Produtos com o mesmo variantGroup são variações uns dos outros (ex: cores). */
+  variantGroup: string | null;
+  /** Rótulo desta variação dentro do grupo (ex: "Preto", "256GB"). */
+  variantLabel: string | null;
   price: number;
   compareAtPrice: number | null;
   stock: number;
   imageUrl: string;
+  /** Imagens adicionais da galeria (além de imageUrl). */
+  images: string[];
+  videoUrl: string | null;
   featured: boolean;
   specs: ProductSpec[];
   viewCount: number;
@@ -29,12 +38,75 @@ export type ProductInput = {
   name: string;
   description: string;
   category: string;
+  subcategory: string;
+  sku: string;
+  variantGroup: string;
+  variantLabel: string;
   price: number;
   compareAtPrice: number | null;
   stock: number;
   imageUrl: string;
+  images: string[];
+  videoUrl: string;
   featured: boolean;
   specs: ProductSpec[];
+};
+
+/** Avaliação de cliente (tabela public.product_reviews). */
+export type Review = {
+  id: number;
+  productId: number;
+  userId: string;
+  author: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+};
+
+export type ReviewInput = {
+  productId: number;
+  author: string;
+  rating: number;
+  comment: string;
+};
+
+/** Cupom de desconto (tabela public.coupons). */
+export type Coupon = {
+  id: number;
+  code: string;
+  type: "percent" | "fixed";
+  value: number;
+  minOrder: number;
+  maxUses: number | null;
+  usedCount: number;
+  expiresAt: string | null;
+  active: boolean;
+  createdAt: string;
+};
+
+export type CouponInput = {
+  code: string;
+  type: "percent" | "fixed";
+  value: number;
+  minOrder: number;
+  maxUses: number | null;
+  expiresAt: string | null;
+  active: boolean;
+};
+
+export type CouponPreview =
+  | { valid: true; code: string; type: "percent" | "fixed"; value: number; discount: number }
+  | { valid: false; reason: string };
+
+/** Resumo de cliente para a aba Clientes do painel. */
+export type CustomerSummary = {
+  id: string;
+  name: string;
+  email: string | null;
+  createdAt: string;
+  ordersCount: number;
+  totalSpent: number;
+  lastOrderAt: string | null;
 };
 
 export type Profile = {
@@ -113,6 +185,8 @@ export type Order = {
   status: string;
   subtotal: number;
   shipping: number;
+  discount: number;
+  couponCode: string | null;
   total: number;
   shippingOption: ShippingOption;
   items: OrderItem[];
@@ -147,10 +221,16 @@ export type ProductRow = {
   slug: string;
   description: string;
   category: string;
+  subcategory: string | null;
+  sku: string | null;
+  variant_group: string | null;
+  variant_label: string | null;
   price: number;
   compare_at_price: number | null;
   stock: number;
   image_url: string;
+  images: string[];
+  video_url: string | null;
   featured: boolean;
   specs: ProductSpec[];
   view_count: number;

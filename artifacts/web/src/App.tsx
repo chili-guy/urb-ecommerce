@@ -1,9 +1,10 @@
-import { type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { CartProvider } from '@/lib/cart-context';
+import { initAnalytics } from '@/lib/analytics';
 import NotFound from '@/pages/not-found';
 import {
   Route,
@@ -47,6 +48,8 @@ function StorefrontRouter() {
       <Switch>
         <Route path="/" component={Home} />
         <Route path="/catalogo" component={Catalog} />
+        <Route path="/categoria/:category" component={Catalog} />
+        <Route path="/categoria/:category/:subcategory" component={Catalog} />
         <Route path="/ofertas" component={Deals} />
         <Route path="/por-que-ur3" component={WhyUr3} />
         <Route path="/produto/:id" component={ProductDetail} />
@@ -69,6 +72,10 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 }
 
 function App() {
+  useEffect(() => {
+    initAnalytics();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
