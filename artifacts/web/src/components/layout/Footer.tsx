@@ -19,6 +19,7 @@ export function Footer() {
              <ul className="space-y-2 text-sm text-[#4f585d]">
               <li><Link href="/catalogo" className="hover:text-[#e26f00]">Todos os Produtos</Link></li>
               <li><Link href="/ofertas" className="hover:text-[#e26f00]">Oferta da semana</Link></li>
+              <li><Link href="/seminovos" className="hover:text-[#e26f00]">Seminovos e usados</Link></li>
               <li><Link href="/catalogo?category=Laptops" className="hover:text-[#e26f00]">Notebooks</Link></li>
                <li><Link href="/catalogo?category=%C3%81udio" className="hover:text-[#e26f00]">Áudio Profissional</Link></li>
                <li><Link href="/catalogo?category=Acess%C3%B3rios" className="hover:text-[#e26f00]">Acessórios</Link></li>

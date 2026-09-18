@@ -18,6 +18,7 @@ import { AuthProvider } from '@/lib/auth-context';
 import Home from '@/pages/Home';
 import Catalog from '@/pages/Catalog';
 import Deals from '@/pages/Deals';
+import Seminovos from '@/pages/Seminovos';
 import WhyUr3 from '@/pages/WhyUr3';
 import ProductDetail from '@/pages/ProductDetail';
 import Cart from '@/pages/Cart';
@@ -51,6 +52,7 @@ function StorefrontRouter() {
         <Route path="/categoria/:category" component={Catalog} />
         <Route path="/categoria/:category/:subcategory" component={Catalog} />
         <Route path="/ofertas" component={Deals} />
+        <Route path="/seminovos" component={Seminovos} />
         <Route path="/por-que-ur3" component={WhyUr3} />
         <Route path="/produto/:id" component={ProductDetail} />
         <Route path="/carrinho" component={Cart} />

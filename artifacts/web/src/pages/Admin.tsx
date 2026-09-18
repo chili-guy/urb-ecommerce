@@ -3,6 +3,7 @@ import { Redirect } from "wouter";
 import {
   useAdminCustomers,
   useAdminOrders,
+  useCategories,
   useCoupons,
   useCreateCoupon,
   useCreateProduct,
@@ -21,10 +22,13 @@ import { uploadProductImage } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
 import {
   ORDER_STATUSES,
+  PRODUCT_CONDITIONS,
+  PRODUCT_CONDITION_LABELS,
   type Coupon,
   type CouponInput,
   type OrderStatus,
   type Product,
+  type ProductCondition,
   type ProductInput,
   type ProductSpec,
   type Role,
@@ -491,9 +495,15 @@ function DashboardTab() {
 
 function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
   const { data: products, isLoading } = useProducts();
+  const { data: knownCategories } = useCategories();
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set([...CATEGORIES, ...(knownCategories ?? [])]);
+    return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [knownCategories]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -502,6 +512,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
+  const [condition, setCondition] = useState<ProductCondition>("novo");
   const [price, setPrice] = useState("");
   const [comparePrice, setComparePrice] = useState("");
   const [stock, setStock] = useState("");
@@ -575,6 +586,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       setName(product.name);
       setDescription(product.description);
       setCategory(product.category);
+      setCondition(product.condition);
       setPrice(product.price.toString());
       setComparePrice(product.compareAtPrice?.toString() || "");
       setStock(product.stock.toString());
@@ -592,6 +604,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       setName("");
       setDescription("");
       setCategory(CATEGORIES[0]);
+      setCondition("novo");
       setPrice("");
       setComparePrice("");
       setStock("");
@@ -630,6 +643,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       variantLabel,
       videoUrl,
       featured,
+      condition,
       specs: specs
         .map((s) => ({ label: s.label.trim(), value: s.value.trim() }))
         .filter((s) => s.label !== "" && s.value !== ""),
@@ -722,7 +736,14 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                         <div>
                           <div className="font-semibold text-foreground line-clamp-1">{product.name}</div>
                           {product.sku && <div className="font-mono text-[11px] text-muted-foreground">{product.sku}</div>}
-                          {product.featured && <span className="inline-block mt-1 text-[10px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Destaque</span>}
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {product.featured && <span className="inline-block text-[10px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">Destaque</span>}
+                            {product.condition !== "novo" && (
+                              <span className="inline-block text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                                {PRODUCT_CONDITION_LABELS[product.condition]}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -775,14 +796,42 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-foreground">Categoria</label>
-                    <select required className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" value={category} onChange={(e) => setCategory(e.target.value)}>
-                      {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                    <Input
+                      required
+                      list="product-categories"
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                      placeholder="Escolha uma existente ou digite uma nova"
+                    />
+                    <datalist id="product-categories">
+                      {categoryOptions.map((c) => <option key={c} value={c} />)}
+                    </datalist>
+                    <p className="text-xs text-muted-foreground">Digitar um nome novo já cria a categoria — ela aparece no catálogo na hora.</p>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-foreground">Estoque (un.)</label>
                     <Input required type="number" min="0" value={stock} onChange={(e) => setStock(e.target.value)} />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">Condição</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {PRODUCT_CONDITIONS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setCondition(c)}
+                        className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                          condition === c
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input text-muted-foreground hover:border-primary/50"
+                        }`}
+                      >
+                        {PRODUCT_CONDITION_LABELS[c]}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Seminovo/Usado aparecem com uma etiqueta no card do produto.</p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="space-y-2">

@@ -7,6 +7,15 @@ export type ProductSpec = {
   value: string;
 };
 
+/** Condição do item — pedido do cliente pra sinalizar produtos usados/seminovos. */
+export const PRODUCT_CONDITIONS = ["novo", "seminovo", "usado"] as const;
+export type ProductCondition = (typeof PRODUCT_CONDITIONS)[number];
+export const PRODUCT_CONDITION_LABELS: Record<ProductCondition, string> = {
+  novo: "Novo",
+  seminovo: "Seminovo",
+  usado: "Usado",
+};
+
 export type Product = {
   id: number;
   name: string;
@@ -27,6 +36,7 @@ export type Product = {
   images: string[];
   videoUrl: string | null;
   featured: boolean;
+  condition: ProductCondition;
   specs: ProductSpec[];
   viewCount: number;
   rating: number;
@@ -49,6 +59,7 @@ export type ProductInput = {
   images: string[];
   videoUrl: string;
   featured: boolean;
+  condition: ProductCondition;
   specs: ProductSpec[];
 };
 
@@ -232,6 +243,7 @@ export type ProductRow = {
   images: string[];
   video_url: string | null;
   featured: boolean;
+  condition: string | null;
   specs: ProductSpec[];
   view_count: number;
   rating: number;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "wouter";
-import { useProducts, type ProductSort } from "@/lib/api";
-import type { Product } from "@/lib/types";
+import { useParams, useSearchParams } from "wouter";
+import { useCategories, useProducts, type ProductSort } from "@/lib/api";
+import { PRODUCT_CONDITIONS, PRODUCT_CONDITION_LABELS, type Product, type ProductCondition } from "@/lib/types";
 import { ProductCard } from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -13,8 +13,9 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
-const CATEGORIES = [
-  "Todos",
+// Usado só como ponto de partida antes da 1ª carga real das categorias — o
+// catálogo passa a listar o que estiver de fato cadastrado nos produtos.
+const FALLBACK_CATEGORIES = [
   "Laptops",
   "Tablets",
   "Smartphones",
@@ -55,7 +56,8 @@ function sortProducts(list: Product[], sort: ProductSort): Product[] {
 
 export default function Catalog() {
   const routeParams = useParams<{ category?: string; subcategory?: string }>();
-  const searchParams = new URLSearchParams(window.location.search);
+  const [urlParams] = useSearchParams();
+  const searchParams = urlParams;
 
   const initialCategory =
     (routeParams.category && decodeURIComponent(routeParams.category)) ||
@@ -64,13 +66,14 @@ export default function Catalog() {
   const initialSubcategory =
     (routeParams.subcategory && decodeURIComponent(routeParams.subcategory)) || "Todas";
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const [category, setCategory] = useState(initialCategory);
   const [subcategory, setSubcategory] = useState(initialSubcategory);
   const [sort, setSort] = useState<ProductSort>("relevance");
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
   const [minRating, setMinRating] = useState(0);
+  const [condition, setCondition] = useState<ProductCondition | "Todas">("Todas");
   const [inStockOnly, setInStockOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -83,11 +86,22 @@ export default function Catalog() {
       routeParams.subcategory ? decodeURIComponent(routeParams.subcategory) : "Todas",
     );
   }, [routeParams.subcategory]);
+  // Busca vinda da navbar (ex: /catalogo?search=...) também sincroniza.
+  useEffect(() => {
+    const q = urlParams.get("search");
+    if (q) setSearch(q);
+  }, [urlParams]);
 
   const { data: products, isLoading } = useProducts({
     search: search || undefined,
     category: category !== "Todos" ? category : undefined,
   });
+
+  const { data: liveCategories } = useCategories();
+  const categories = useMemo(
+    () => ["Todos", ...(liveCategories && liveCategories.length > 0 ? liveCategories : FALLBACK_CATEGORIES)],
+    [liveCategories],
+  );
 
   const subcategories = useMemo(() => {
     const set = new Set<string>();
@@ -107,6 +121,7 @@ export default function Catalog() {
     (priceMin ? 1 : 0) +
     (priceMax ? 1 : 0) +
     (minRating > 0 ? 1 : 0) +
+    (condition !== "Todas" ? 1 : 0) +
     (inStockOnly ? 1 : 0);
 
   const clearAdvancedFilters = () => {
@@ -114,6 +129,7 @@ export default function Catalog() {
     setPriceMin("");
     setPriceMax("");
     setMinRating(0);
+    setCondition("Todas");
     setInStockOnly(false);
   };
 
@@ -125,9 +141,10 @@ export default function Catalog() {
     if (min !== undefined && !Number.isNaN(min)) list = list.filter((p) => p.price >= min);
     if (max !== undefined && !Number.isNaN(max)) list = list.filter((p) => p.price <= max);
     if (minRating > 0) list = list.filter((p) => p.rating >= minRating);
+    if (condition !== "Todas") list = list.filter((p) => p.condition === condition);
     if (inStockOnly) list = list.filter((p) => p.stock > 0);
     return sortProducts(list, sort);
-  }, [products, subcategory, priceMin, priceMax, minRating, inStockOnly, sort]);
+  }, [products, subcategory, priceMin, priceMax, minRating, condition, inStockOnly, sort]);
 
   const searchField = (
     <div className="relative">
@@ -171,6 +188,27 @@ export default function Catalog() {
                 <Star className="h-3.5 w-3.5 fill-current" /> {r}+
               </>
             )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const conditionFilter = (
+    <div className="space-y-2">
+      <h3 className="font-display font-semibold">Condição</h3>
+      <div className="flex flex-wrap gap-1.5">
+        {(["Todas", ...PRODUCT_CONDITIONS] as const).map((c) => (
+          <button
+            key={c}
+            onClick={() => setCondition(c)}
+            className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+              condition === c
+                ? "border-primary bg-primary text-primary-foreground font-medium"
+                : "border-border text-muted-foreground hover:border-primary/50"
+            }`}
+          >
+            {c === "Todas" ? "Todas" : PRODUCT_CONDITION_LABELS[c]}
           </button>
         ))}
       </div>
@@ -264,7 +302,7 @@ export default function Catalog() {
       <div className="mb-6 space-y-3 lg:hidden">
         {searchField}
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => handleCategoryChange(cat)}
@@ -297,6 +335,7 @@ export default function Catalog() {
                 {subcategoryFilter}
                 {priceFilter}
                 {ratingFilter}
+                {conditionFilter}
                 {stockFilter}
               </div>
               <div className="flex gap-3 border-t pt-4">
@@ -337,7 +376,7 @@ export default function Catalog() {
               <SlidersHorizontal className="h-4 w-4" /> Categorias
             </h3>
             <div className="flex flex-col gap-1">
-              {CATEGORIES.map((cat) => (
+              {categories.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => handleCategoryChange(cat)}
@@ -359,6 +398,7 @@ export default function Catalog() {
             <h3 className="font-display font-semibold">Filtros avançados</h3>
             {priceFilter}
             {ratingFilter}
+            {conditionFilter}
             {stockFilter}
             {activeFilterCount > 0 && (
               <button

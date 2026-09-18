@@ -1,7 +1,7 @@
 import { useState, type MouseEvent } from "react";
 import { Link } from "wouter";
 import { formatCurrency } from "@/lib/utils";
-import type { Product } from "@/lib/types";
+import { PRODUCT_CONDITION_LABELS, type Product } from "@/lib/types";
 import { Rocket, ShoppingCart, Star } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { trackAddToCart } from "@/lib/analytics";
@@ -52,6 +52,11 @@ export function ProductCard({ product }: { product: Product }) {
         {hasDiscount && (
           <span className="font-mono absolute left-2.5 top-2.5 z-10 rounded-md bg-[#ff6a13] px-2 py-1 text-[11px] font-bold text-white shadow-[0_5px_14px_rgba(255,106,19,0.28)] sm:left-3 sm:top-3 sm:rounded-lg sm:px-2.5 sm:py-1.5 sm:text-xs">
             -{discountPercentage}%
+          </span>
+        )}
+        {product.condition !== "novo" && (
+          <span className="absolute right-2.5 top-2.5 z-10 rounded-md bg-[#111820] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white shadow-[0_5px_14px_rgba(17,24,32,0.28)] sm:right-3 sm:top-3 sm:rounded-lg sm:px-2.5 sm:py-1.5 sm:text-[11px]">
+            {PRODUCT_CONDITION_LABELS[product.condition]}
           </span>
         )}
 

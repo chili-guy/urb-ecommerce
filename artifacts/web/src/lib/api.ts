@@ -4,6 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { supabase } from "./supabase";
+import { PRODUCT_CONDITIONS } from "./types";
 import type {
   Address,
   AddressInput,
@@ -15,6 +16,7 @@ import type {
   Order,
   OrderStatus,
   Product,
+  ProductCondition,
   ProductInput,
   ProductSpec,
   Profile,
@@ -42,6 +44,12 @@ function mapImages(value: unknown): string[] {
   return value.filter((v): v is string => typeof v === "string" && v.trim() !== "");
 }
 
+function mapCondition(value: unknown): ProductCondition {
+  return (PRODUCT_CONDITIONS as readonly string[]).includes(value as string)
+    ? (value as ProductCondition)
+    : "novo";
+}
+
 function mapProduct(r: Row): Product {
   return {
     id: r.id as number,
@@ -60,6 +68,7 @@ function mapProduct(r: Row): Product {
     images: mapImages(r.images),
     videoUrl: (r.video_url as string) || null,
     featured: Boolean(r.featured),
+    condition: mapCondition(r.condition),
     specs: mapSpecs(r.specs),
     viewCount: Number(r.view_count ?? 0),
     rating: Number(r.rating),
@@ -107,6 +116,7 @@ export type ProductQuery = {
   maxPrice?: number;
   minRating?: number;
   inStock?: boolean;
+  condition?: ProductCondition;
   sort?: ProductSort;
 };
 
@@ -116,6 +126,7 @@ async function fetchProducts(params: ProductQuery): Promise<Product[]> {
   if (params.featured !== undefined) q = q.eq("featured", params.featured);
   if (params.category) q = q.eq("category", params.category);
   if (params.subcategory) q = q.eq("subcategory", params.subcategory);
+  if (params.condition) q = q.eq("condition", params.condition);
   if (params.search) {
     const term = params.search.replace(/[%,]/g, "");
     q = q.or(`name.ilike.%${term}%,description.ilike.%${term}%`);
@@ -155,6 +166,31 @@ export function useProducts(params: ProductQuery = {}) {
   });
 }
 
+/**
+ * Categorias em uso no catálogo, direto dos produtos cadastrados — não é uma
+ * lista fixa. Criar um produto com categoria nova já a torna disponível aqui
+ * (é assim que a equipe adiciona categoria pelo próprio painel).
+ */
+export function useCategories(enabled = true) {
+  return useQuery({
+    queryKey: ["categories"],
+    enabled,
+    queryFn: async (): Promise<string[]> => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("category")
+        .order("category", { ascending: true });
+      if (error) throw error;
+      const set = new Set(
+        (data ?? [])
+          .map((r) => (r.category as string)?.trim())
+          .filter((c): c is string => !!c),
+      );
+      return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    },
+  });
+}
+
 export function useProduct(id: number, opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["product", id],
@@ -189,6 +225,7 @@ function toProductRow(data: Partial<ProductInput>) {
   }
   if (data.videoUrl !== undefined) row.video_url = data.videoUrl.trim() || null;
   if (data.featured !== undefined) row.featured = data.featured;
+  if (data.condition !== undefined) row.condition = data.condition;
   if (data.specs !== undefined) {
     row.specs = data.specs
       .map((s) => ({ label: s.label.trim(), value: s.value.trim() }))
@@ -214,15 +251,32 @@ export function useProductVariants(variantGroup: string | null) {
   });
 }
 
+/**
+ * Se o erro for "essa coluna não existe" (banco ainda sem a migração mais
+ * recente), tira esse campo do payload pra tentar de novo uma vez — assim um
+ * produto continua podendo ser salvo mesmo antes da migração rodar.
+ */
+function stripMissingColumn(
+  row: Row,
+  error: { code?: string; message?: string } | null,
+): boolean {
+  if (!error || error.code !== "42703") return false;
+  const match = error.message?.match(/column ["\w.]*?(\w+)["]? does not exist/i);
+  const col = match?.[1];
+  if (!col || !(col in row)) return false;
+  delete row[col];
+  return true;
+}
+
 export function useCreateProduct() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: ProductInput): Promise<Product> => {
-      const { data, error } = await supabase
-        .from("products")
-        .insert(toProductRow(input))
-        .select("*")
-        .single();
+      const row = toProductRow(input);
+      let { data, error } = await supabase.from("products").insert(row).select("*").single();
+      if (error && stripMissingColumn(row, error)) {
+        ({ data, error } = await supabase.from("products").insert(row).select("*").single());
+      }
       if (error) throw error;
       return mapProduct(data);
     },
@@ -238,19 +292,28 @@ export function useUpdateProduct() {
   return useMutation({
     mutationFn: async ({
       id,
-      data,
+      data: input,
     }: {
       id: number;
       data: Partial<ProductInput>;
     }): Promise<Product> => {
-      const { data: row, error } = await supabase
+      const row = toProductRow(input);
+      let { data, error } = await supabase
         .from("products")
-        .update(toProductRow(data))
+        .update(row)
         .eq("id", id)
         .select("*")
         .single();
+      if (error && stripMissingColumn(row, error)) {
+        ({ data, error } = await supabase
+          .from("products")
+          .update(row)
+          .eq("id", id)
+          .select("*")
+          .single());
+      }
       if (error) throw error;
-      return mapProduct(row);
+      return mapProduct(data);
     },
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ["products"] });

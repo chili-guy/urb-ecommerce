@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link, useLocation } from "wouter";
 import { useCart } from "@/lib/cart-context";
 import { useAuth } from "@/lib/auth-context";
@@ -32,9 +32,46 @@ import { toast } from "sonner";
 
 const NAV_LINKS = [
   { href: "/#destaques", label: "Destaques" },
+  { href: "/seminovos", label: "Seminovos" },
   { href: "/por-que-ur3", label: "Por que UR3" },
   { href: "/ofertas", label: "Oferta da semana" },
 ];
+
+/** Campo de busca visível no cabeçalho (pedido do cliente — ele queria algo
+ * como as outras lojas têm, não só o ícone de lupa). */
+function NavbarSearch({
+  className = "",
+  onSubmit,
+}: {
+  className?: string;
+  onSubmit?: () => void;
+}) {
+  const [, setLocation] = useLocation();
+  const [term, setTerm] = useState("");
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    const q = term.trim();
+    setLocation(q ? `/catalogo?search=${encodeURIComponent(q)}` : "/catalogo");
+    onSubmit?.();
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className={className} role="search">
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#8a9096]" />
+        <input
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          type="search"
+          placeholder="Buscar produtos..."
+          aria-label="Buscar produtos"
+          className="h-9 w-full rounded-full border border-[#f4f1eb]/15 bg-[#f4f1eb]/[.06] pl-8 pr-3 text-[13px] text-[#f4f1eb] outline-none transition-colors placeholder:text-[#8a9096] focus:border-[#ff8a0a]/60 focus:bg-[#f4f1eb]/10"
+        />
+      </div>
+    </form>
+  );
+}
 
 function AccountMenu() {
   const { user, isLoading, isStaff, signOut } = useAuth();
@@ -144,6 +181,7 @@ function MobileMenu() {
           </div>
 
           <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+            <NavbarSearch className="mb-2 px-1" onSubmit={close} />
             <Link href="/catalogo" onClick={close} className={`${itemCls} bg-[#ff8a0a]/15 text-[#ffb85d]`}>
               <Search className="h-[18px] w-[18px]" /> Ver catálogo
             </Link>
@@ -201,8 +239,8 @@ export function Navbar() {
   const { itemCount } = useCart();
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[#f4f1eb]/15 bg-[#111820]/95 text-[#f4f1eb] backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-[1320px] items-center justify-between px-4 sm:h-[76px] sm:px-8 lg:px-12">
-        <div className="flex items-center gap-2 md:gap-8">
+      <div className="mx-auto flex h-16 max-w-[1320px] items-center gap-4 px-4 sm:h-[76px] sm:px-8 lg:px-12">
+        <div className="flex shrink-0 items-center gap-2 md:gap-8">
           <MobileMenu />
 
           <Link
@@ -230,12 +268,15 @@ export function Navbar() {
           </nav>
         </div>
 
-        <div className="flex items-center gap-0.5 sm:gap-2">
+        {/* Só entra a partir do xl: em lg ainda é apertado com os 4 links de menu. */}
+        <NavbarSearch className="hidden min-w-0 flex-1 xl:block" />
+
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-2">
           <Link href="/catalogo" className="mr-2 hidden items-center gap-2 text-[11px] font-bold uppercase tracking-[.18em] text-[#ffb85d] transition-colors hover:text-[#ff8a0a] lg:flex">
             Ver catálogo <ChevronRight className="h-4 w-4" />
           </Link>
 
-          <Button variant="ghost" size="icon" className="hidden text-[#f4f1eb] hover:bg-[#ff8a0a] hover:text-[#111820] sm:inline-flex" asChild>
+          <Button variant="ghost" size="icon" className="hidden text-[#f4f1eb] hover:bg-[#ff8a0a] hover:text-[#111820] sm:inline-flex xl:hidden" asChild>
             <Link href="/catalogo" aria-label="Buscar produtos">
               <Search className="h-5 w-5" />
             </Link>

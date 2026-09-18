@@ -14,7 +14,7 @@ import { trackAddToCart, trackViewItem } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import type { ShippingOption } from "@/lib/types";
+import { PRODUCT_CONDITION_LABELS, type ShippingOption } from "@/lib/types";
 import {
   ShoppingCart,
   ArrowLeft,
@@ -298,6 +298,11 @@ export default function ProductDetail() {
             {product.featured && (
               <Badge className="absolute top-4 left-4 z-10 bg-accent hover:bg-accent border-none text-accent-foreground">
                 Destaque
+              </Badge>
+            )}
+            {product.condition !== "novo" && (
+              <Badge className="absolute top-4 right-4 z-10 border-none bg-foreground text-background hover:bg-foreground">
+                {PRODUCT_CONDITION_LABELS[product.condition]}
               </Badge>
             )}
             <img
