@@ -72,6 +72,8 @@ import {
   BarChart3,
   Download,
   MoreHorizontal,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -571,6 +573,15 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
   const removeGalleryImage = (i: number) =>
     setImages((prev) => prev.filter((_, idx) => idx !== i));
 
+  const moveGalleryImage = (i: number, dir: -1 | 1) =>
+    setImages((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+
   const filteredProducts = useMemo(() => {
     if (!products) return [];
     if (!searchTerm) return products;
@@ -885,7 +896,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {images.map((src, i) => (
-                      <div key={i} className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/60 bg-white">
+                      <div key={i} className="group relative h-16 w-16 overflow-hidden rounded-lg border border-border/60 bg-white">
                         <img src={src} alt="" className="h-full w-full object-contain p-1 mix-blend-multiply" />
                         <button
                           type="button"
@@ -894,6 +905,28 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                         >
                           <X className="h-3 w-3" />
                         </button>
+                        {images.length > 1 && (
+                          <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                            <button
+                              type="button"
+                              onClick={() => moveGalleryImage(i, -1)}
+                              disabled={i === 0}
+                              aria-label="Mover pra esquerda"
+                              className="flex-1 py-0.5 text-white disabled:opacity-30"
+                            >
+                              <ChevronLeft className="mx-auto h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveGalleryImage(i, 1)}
+                              disabled={i === images.length - 1}
+                              aria-label="Mover pra direita"
+                              className="flex-1 py-0.5 text-white disabled:opacity-30"
+                            >
+                              <ChevronRight className="mx-auto h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ))}
                     <button
@@ -906,7 +939,11 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                     </button>
                     <input ref={galleryInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryFiles} />
                   </div>
-                  <p className="text-xs text-muted-foreground">Fotos extras mostradas na galeria da página do produto.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Fotos extras mostradas na galeria da página do produto, na ordem daqui — passe o mouse
+                    sobre uma foto pra usar as setas e reordenar. Pra escolher várias de uma vez no seletor
+                    de arquivos, segure Ctrl (ou Shift) enquanto clica em cada uma.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

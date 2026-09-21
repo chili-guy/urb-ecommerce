@@ -253,16 +253,24 @@ export function useProductVariants(variantGroup: string | null) {
 
 /**
  * Se o erro for "essa coluna não existe" (banco ainda sem a migração mais
- * recente), tira esse campo do payload pra tentar de novo uma vez — assim um
- * produto continua podendo ser salvo mesmo antes da migração rodar.
+ * recente), tira esse campo do payload pra tentar de novo — assim um produto
+ * continua podendo ser salvo mesmo antes da migração rodar. O PostgREST usa
+ * dois formatos diferentes pra isso: 42703 (erro cru do Postgres, ex: num
+ * ?select= com coluna inválida) e PGRST204 (validação do próprio PostgREST
+ * num insert/update com uma chave sem coluna correspondente — é o caso real
+ * aqui, já que create/update de produto sempre passa por insert/update).
  */
 function stripMissingColumn(
   row: Row,
   error: { code?: string; message?: string } | null,
 ): boolean {
-  if (!error || error.code !== "42703") return false;
-  const match = error.message?.match(/column ["\w.]*?(\w+)["]? does not exist/i);
-  const col = match?.[1];
+  if (!error) return false;
+  let col: string | undefined;
+  if (error.code === "42703") {
+    col = error.message?.match(/column ["\w.]*?(\w+)["]? does not exist/i)?.[1];
+  } else if (error.code === "PGRST204") {
+    col = error.message?.match(/Could not find the '(\w+)' column/i)?.[1];
+  }
   if (!col || !(col in row)) return false;
   delete row[col];
   return true;
@@ -273,9 +281,12 @@ export function useCreateProduct() {
   return useMutation({
     mutationFn: async (input: ProductInput): Promise<Product> => {
       const row = toProductRow(input);
-      let { data, error } = await supabase.from("products").insert(row).select("*").single();
-      if (error && stripMissingColumn(row, error)) {
+      let data, error;
+      // Tenta até 6x, tirando uma coluna ainda-não-migrada do payload a cada
+      // vez — cobre o caso de mais de uma migração pendente ao mesmo tempo.
+      for (let attempt = 0; attempt < 6; attempt++) {
         ({ data, error } = await supabase.from("products").insert(row).select("*").single());
+        if (!error || !stripMissingColumn(row, error)) break;
       }
       if (error) throw error;
       return mapProduct(data);
@@ -298,19 +309,15 @@ export function useUpdateProduct() {
       data: Partial<ProductInput>;
     }): Promise<Product> => {
       const row = toProductRow(input);
-      let { data, error } = await supabase
-        .from("products")
-        .update(row)
-        .eq("id", id)
-        .select("*")
-        .single();
-      if (error && stripMissingColumn(row, error)) {
+      let data, error;
+      for (let attempt = 0; attempt < 6; attempt++) {
         ({ data, error } = await supabase
           .from("products")
           .update(row)
           .eq("id", id)
           .select("*")
           .single());
+        if (!error || !stripMissingColumn(row, error)) break;
       }
       if (error) throw error;
       return mapProduct(data);
