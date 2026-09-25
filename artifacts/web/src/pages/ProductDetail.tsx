@@ -7,6 +7,7 @@ import {
   useProductVariants,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { recordProductView } from "@/lib/recently-viewed";
 import { formatCurrency, youtubeEmbedUrl } from "@/lib/utils";
 import { getShippingOptions } from "@/lib/shipping";
 import { useCart } from "@/lib/cart-context";
@@ -25,8 +26,11 @@ import {
   ListChecks,
   PlayCircle,
   MessageSquare,
+  ChevronLeft,
+  ChevronRight,
+  ZoomIn,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 function ShippingEstimator({ productId }: { productId: number }) {
@@ -227,6 +231,66 @@ export default function ProductDetail() {
   const { addItem } = useCart();
   const [quantity, setQuantity] = useState(1);
   const [activeImage, setActiveImage] = useState(0);
+  const [zoomActive, setZoomActive] = useState(false);
+  const [zoomPos, setZoomPos] = useState({ x: 50, y: 50 });
+  const imageWrapRef = useRef<HTMLDivElement>(null);
+  const mainImgRef = useRef<HTMLImageElement>(null);
+  const zoomDragRef = useRef(false);
+  const lastTouchTimeRef = useRef(0);
+
+  const posFromPoint = (clientX: number, clientY: number) => {
+    const rect = imageWrapRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      x: Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)),
+      y: Math.max(0, Math.min(100, ((clientY - rect.top) / rect.height) * 100)),
+    };
+  };
+
+  const handleImageMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const pos = posFromPoint(e.clientX, e.clientY);
+    if (pos) setZoomPos(pos);
+  };
+
+  // No touch (celular/tablet) o zoom acompanha o dedo enquanto arrasta na foto.
+  // O touchmove precisa de um listener nativo não-passivo pra poder bloquear o
+  // scroll da página durante o arrasto — o onTouchMove do React é passivo por padrão.
+  useEffect(() => {
+    const el = imageWrapRef.current;
+    if (!el) return;
+    const onNativeTouchMove = (e: TouchEvent) => {
+      if (!zoomDragRef.current) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      e.preventDefault();
+      const pos = posFromPoint(touch.clientX, touch.clientY);
+      if (pos) setZoomPos(pos);
+    };
+    el.addEventListener("touchmove", onNativeTouchMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onNativeTouchMove);
+  }, [product]);
+
+  const handleImageTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    lastTouchTimeRef.current = Date.now();
+    if (e.target !== mainImgRef.current) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    zoomDragRef.current = true;
+    const pos = posFromPoint(touch.clientX, touch.clientY);
+    if (pos) setZoomPos(pos);
+    setZoomActive(true);
+  };
+
+  const handleImageTouchEnd = () => {
+    lastTouchTimeRef.current = Date.now();
+    zoomDragRef.current = false;
+    setZoomActive(false);
+  };
+
+  // Guarda no navegador do cliente pra alimentar "Vistos recentemente" na home.
+  useEffect(() => {
+    if (product) recordProductView(product.id);
+  }, [product]);
 
   // Conta 1 acesso por produto por sessão do navegador (métrica do painel).
   useEffect(() => {
@@ -294,7 +358,20 @@ export default function ProductDetail() {
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-12 lg:gap-16">
         <div>
-          <div className="relative flex aspect-square items-center justify-center overflow-hidden rounded-xl border bg-secondary/30 p-6 sm:p-8">
+          <div
+            ref={imageWrapRef}
+            className={`relative flex aspect-square items-center justify-center overflow-hidden rounded-xl border bg-secondary/30 p-6 sm:p-8 ${zoomActive ? "cursor-zoom-out" : "cursor-zoom-in"}`}
+            onClick={(e) => {
+              // Ignora o clique-fantasma que o navegador dispara depois de um toque.
+              if (Date.now() - lastTouchTimeRef.current < 700) return;
+              if (e.target === mainImgRef.current) setZoomActive((v) => !v);
+            }}
+            onMouseMove={handleImageMouseMove}
+            onMouseLeave={() => setZoomActive(false)}
+            onTouchStart={handleImageTouchStart}
+            onTouchEnd={handleImageTouchEnd}
+            onTouchCancel={handleImageTouchEnd}
+          >
             {product.featured && (
               <Badge className="absolute top-4 left-4 z-10 bg-accent hover:bg-accent border-none text-accent-foreground">
                 Destaque
@@ -306,13 +383,61 @@ export default function ProductDetail() {
               </Badge>
             )}
             <img
+              ref={mainImgRef}
               src={gallery[activeImage] ?? product.imageUrl}
               alt={product.name}
-              className="w-full h-full object-contain mix-blend-multiply"
+              className="w-full h-full touch-none object-contain mix-blend-multiply"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = 'https://placehold.co/800x800/e2e8f0/1e293b?text=Produto';
               }}
             />
+            {gallery.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Foto anterior"
+                  onClick={() => setActiveImage((i) => (i - 1 + gallery.length) % gallery.length)}
+                  className="absolute left-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md backdrop-blur transition-colors hover:bg-background sm:left-3"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Próxima foto"
+                  onClick={() => setActiveImage((i) => (i + 1) % gallery.length)}
+                  className="absolute right-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md backdrop-blur transition-colors hover:bg-background sm:right-3"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+                <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1.5">
+                  {gallery.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      aria-label={`Ver foto ${i + 1}`}
+                      onClick={() => setActiveImage(i)}
+                      className={`h-1.5 rounded-full transition-all ${
+                        i === activeImage ? "w-4 bg-primary" : "w-1.5 bg-foreground/20"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="pointer-events-none absolute bottom-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md backdrop-blur">
+              <ZoomIn className="h-4 w-4" />
+            </div>
+            {zoomActive && (
+              <div
+                className="pointer-events-none absolute inset-0 z-20 bg-white"
+                style={{
+                  backgroundImage: `url(${gallery[activeImage] ?? product.imageUrl})`,
+                  backgroundRepeat: "no-repeat",
+                  backgroundSize: "220%",
+                  backgroundPosition: `${zoomPos.x}% ${zoomPos.y}%`,
+                }}
+              />
+            )}
           </div>
           {gallery.length > 1 && (
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
@@ -369,7 +494,7 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          <p className="text-muted-foreground text-lg leading-relaxed mb-8">
+          <p className="whitespace-pre-line text-muted-foreground text-lg leading-relaxed mb-8">
             {product.description}
           </p>
 

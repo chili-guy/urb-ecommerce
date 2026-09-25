@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { CartProvider } from '@/lib/cart-context';
 import { initAnalytics } from '@/lib/analytics';
+import { incrementSiteVisit } from '@/lib/api';
 import NotFound from '@/pages/not-found';
 import {
   Route,
@@ -44,6 +45,18 @@ function Router() {
 }
 
 function StorefrontRouter() {
+  // Conta 1 visita por sessão do navegador (métrica do painel) — só na loja,
+  // não quando a própria equipe está no /admin.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('ur3:site-visit-counted')) return;
+      sessionStorage.setItem('ur3:site-visit-counted', '1');
+    } catch {
+      /* modo privado / storage bloqueado — conta mesmo assim */
+    }
+    void incrementSiteVisit();
+  }, []);
+
   return (
     <AppShell>
       <Switch>

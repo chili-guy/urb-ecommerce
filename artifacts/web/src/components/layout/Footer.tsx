@@ -40,7 +40,7 @@ export function Footer() {
              <ul className="space-y-2 text-sm text-[#4f585d]">
               <li><Link href="/por-que-ur3" className="hover:text-[#e26f00]">Por que a UR3</Link></li>
               <li><Link href="/ofertas" className="hover:text-[#e26f00]">Oferta da semana</Link></li>
-              <li><Link href="/admin" className="hover:text-[#e26f00]">Painel de Controle</Link></li>
+              <li><Link href="/seminovos" className="hover:text-[#e26f00]">Seminovos e usados</Link></li>
             </ul>
           </div>
         </div>

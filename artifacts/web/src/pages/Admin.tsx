@@ -3,27 +3,33 @@ import { Redirect } from "wouter";
 import {
   useAdminCustomers,
   useAdminOrders,
+  useBanners,
   useCategories,
   useCoupons,
+  useCreateBanner,
   useCreateCoupon,
   useCreateProduct,
   useDashboardSummary,
+  useDeleteBanner,
   useDeleteCoupon,
   useDeleteProduct,
   useGrantRole,
   useProducts,
   useRevokeRole,
   useTeam,
+  useUpdateBanner,
   useUpdateCoupon,
   useUpdateOrderStatus,
   useUpdateProduct,
 } from "@/lib/api";
-import { uploadProductImage } from "@/lib/storage";
+import { uploadProductImage, uploadSiteMedia } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
 import {
   ORDER_STATUSES,
   PRODUCT_CONDITIONS,
   PRODUCT_CONDITION_LABELS,
+  type Banner,
+  type BannerInput,
   type Coupon,
   type CouponInput,
   type OrderStatus,
@@ -74,6 +80,11 @@ import {
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
+  Image as ImageIcon,
+  ArrowUp,
+  ArrowDown,
+  Activity,
+  Link2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -155,6 +166,7 @@ type AdminTab =
   | "products"
   | "orders"
   | "coupons"
+  | "banners"
   | "customers"
   | "reports"
   | "team";
@@ -221,6 +233,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           <NavItem icon={Package} label="Catálogo" active={activeTab === "products"} onClick={() => setActiveTab("products")} />
           <NavItem icon={ShoppingCart} label="Pedidos" active={activeTab === "orders"} onClick={() => setActiveTab("orders")} />
           <NavItem icon={Ticket} label="Cupons" active={activeTab === "coupons"} onClick={() => setActiveTab("coupons")} />
+          <NavItem icon={ImageIcon} label="Banners" active={activeTab === "banners"} onClick={() => setActiveTab("banners")} />
           <NavItem icon={Contact} label="Clientes" active={activeTab === "customers"} onClick={() => setActiveTab("customers")} />
           <NavItem icon={BarChart3} label="Relatórios" active={activeTab === "reports"} onClick={() => setActiveTab("reports")} />
           <div className="pt-4 pb-2">
@@ -258,7 +271,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           <SheetTrigger asChild>
             <button
               className={`p-3 rounded-lg ${
-                ["coupons", "customers", "reports", "team"].includes(activeTab) ? "bg-primary/10 text-primary" : ""
+                ["coupons", "banners", "customers", "reports", "team"].includes(activeTab) ? "bg-primary/10 text-primary" : ""
               }`}
             >
               <MoreHorizontal className="h-5 w-5" />
@@ -269,6 +282,9 @@ function AdminDashboard({ admin }: { admin: Admin }) {
             <div className="mt-4 space-y-1.5 pb-4">
               <button onClick={() => { setActiveTab("coupons"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "coupons" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
                 <Ticket className="h-4 w-4" /> Cupons
+              </button>
+              <button onClick={() => { setActiveTab("banners"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "banners" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
+                <ImageIcon className="h-4 w-4" /> Banners
               </button>
               <button onClick={() => { setActiveTab("customers"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "customers" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
                 <Contact className="h-4 w-4" /> Clientes
@@ -296,6 +312,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           {activeTab === "products" && <ProductsTab isAdmin={admin.isAdmin} />}
           {activeTab === "orders" && <OrdersTab />}
           {activeTab === "coupons" && <CouponsTab />}
+          {activeTab === "banners" && <BannersTab />}
           {activeTab === "customers" && <CustomersTab />}
           {activeTab === "reports" && <ReportsTab />}
           {activeTab === "team" && admin.isAdmin && <TeamTab />}
@@ -328,7 +345,7 @@ function DashboardTab() {
         <p className="text-muted-foreground mt-1">Acompanhamento de vendas e métricas da loja.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 md:gap-6">
         <Card className="border-border/60 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Receita Total</CardTitle>
@@ -373,6 +390,17 @@ function DashboardTab() {
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{summary.inventoryUnits}</div>
             <p className="text-xs text-muted-foreground mt-1">Unidades físicas armazenadas</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Visitas (7 dias)</CardTitle>
+            <Activity className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">{summary.visits7Days.toLocaleString("pt-BR")}</div>
+            <p className="text-xs text-muted-foreground mt-1">{summary.visitsTotal.toLocaleString("pt-BR")} desde o início</p>
           </CardContent>
         </Card>
       </div>
@@ -1455,6 +1483,266 @@ function CustomersTab() {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+const EMPTY_BANNER_FORM = {
+  imageUrl: "",
+  linkUrl: "",
+  title: "",
+  active: true,
+};
+
+function BannersTab() {
+  const { data: banners, isLoading } = useBanners();
+  const createBanner = useCreateBanner();
+  const updateBanner = useUpdateBanner();
+  const deleteBanner = useDeleteBanner();
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState(EMPTY_BANNER_FORM);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const sorted = useMemo(
+    () => (banners ? [...banners].sort((a, b) => a.sortOrder - b.sortOrder) : []),
+    [banners],
+  );
+
+  const openModal = (banner?: Banner) => {
+    if (banner) {
+      setEditingId(banner.id);
+      setForm({
+        imageUrl: banner.imageUrl,
+        linkUrl: banner.linkUrl ?? "",
+        title: banner.title,
+        active: banner.active,
+      });
+    } else {
+      setEditingId(null);
+      setForm(EMPTY_BANNER_FORM);
+    }
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingId(null);
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadSiteMedia(file);
+      setForm((f) => ({ ...f, imageUrl: url }));
+      toast.success("Imagem enviada");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao enviar imagem");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.imageUrl) {
+      toast.error("Envie uma imagem para o banner");
+      return;
+    }
+    if (editingId) {
+      const data: Partial<BannerInput> = {
+        imageUrl: form.imageUrl,
+        linkUrl: form.linkUrl.trim(),
+        title: form.title.trim(),
+        active: form.active,
+      };
+      updateBanner.mutate(
+        { id: editingId, data },
+        {
+          onSuccess: () => {
+            toast.success("Banner atualizado");
+            closeModal();
+          },
+          onError: () => toast.error("Falha ao salvar banner"),
+        },
+      );
+    } else {
+      const data: BannerInput = {
+        imageUrl: form.imageUrl,
+        linkUrl: form.linkUrl.trim(),
+        title: form.title.trim(),
+        active: form.active,
+        sortOrder: sorted.length > 0 ? Math.max(...sorted.map((b) => b.sortOrder)) + 1 : 0,
+      };
+      createBanner.mutate(data, {
+        onSuccess: () => {
+          toast.success("Banner criado");
+          closeModal();
+        },
+        onError: () => toast.error("Falha ao criar banner"),
+      });
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Excluir este banner? A ação não pode ser desfeita.")) {
+      deleteBanner.mutate(id, {
+        onSuccess: () => toast.success("Banner excluído"),
+        onError: () => toast.error("Falha ao excluir banner"),
+      });
+    }
+  };
+
+  const moveBanner = (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= sorted.length) return;
+    const a = sorted[index];
+    const b = sorted[target];
+    updateBanner.mutate({ id: a.id, data: { sortOrder: b.sortOrder } });
+    updateBanner.mutate({ id: b.id, data: { sortOrder: a.sortOrder } });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-display font-bold text-foreground">Banners</h2>
+          <p className="text-sm text-muted-foreground mt-1">Carrossel de promoções exibido no topo da home.</p>
+        </div>
+        <Button onClick={() => openModal()} className="jurb-cta shadow-md">
+          <Plus className="h-4 w-4 mr-2" /> Novo Banner
+        </Button>
+      </div>
+
+      <div className="border border-border/60 rounded-xl bg-card shadow-sm overflow-hidden">
+        {isLoading ? (
+          <div className="px-6 py-12 text-center text-muted-foreground">Carregando banners...</div>
+        ) : sorted.length === 0 ? (
+          <div className="px-6 py-12 text-center text-muted-foreground">Nenhum banner criado ainda.</div>
+        ) : (
+          <div className="divide-y divide-border/50">
+            {sorted.map((banner, i) => (
+              <div key={banner.id} className="flex items-center gap-4 p-4">
+                <div className="flex flex-col gap-1 shrink-0">
+                  <button
+                    className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30"
+                    disabled={i === 0}
+                    onClick={() => moveBanner(i, -1)}
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-30"
+                    disabled={i === sorted.length - 1}
+                    onClick={() => moveBanner(i, 1)}
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="h-16 w-28 shrink-0 overflow-hidden rounded-lg border border-border/50 bg-secondary/30">
+                  <img src={banner.imageUrl} alt={banner.title} className="h-full w-full object-cover" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="truncate font-semibold text-foreground">{banner.title || "Sem título"}</p>
+                  {banner.linkUrl && (
+                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                      <Link2 className="h-3 w-3 shrink-0" /> {banner.linkUrl}
+                    </p>
+                  )}
+                </div>
+                <span className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${
+                  banner.active
+                    ? "bg-green-500/10 text-green-700 border-green-500/30 dark:text-green-300"
+                    : "bg-secondary text-muted-foreground border-border/50"
+                }`}>
+                  {banner.active ? "Ativo" : "Inativo"}
+                </span>
+                <div className="flex shrink-0 gap-2">
+                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => openModal(banner)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8 hover:bg-destructive hover:text-destructive-foreground hover:border-destructive" onClick={() => handleDelete(banner.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border border-border shadow-2xl rounded-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-6 border-b border-border/50 shrink-0">
+              <h2 className="text-xl font-display font-bold text-foreground">{editingId ? "Editar Banner" : "Novo Banner"}</h2>
+              <button onClick={closeModal} className="text-muted-foreground hover:text-foreground transition-colors bg-secondary/50 p-2 rounded-full hover:bg-secondary">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-6">
+              <form id="banner-form" onSubmit={handleSave} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">Imagem</label>
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+                  {form.imageUrl ? (
+                    <div className="relative overflow-hidden rounded-lg border border-border/60 aspect-[3/1] bg-secondary/30">
+                      <img src={form.imageUrl} alt="Prévia do banner" className="h-full w-full object-cover" />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="absolute bottom-2 right-2 bg-card/90"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploading}
+                      >
+                        {uploading ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-2" />}
+                        Trocar
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="flex aspect-[3/1] w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border/60 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                    >
+                      {uploading ? <Loader2 className="h-6 w-6 animate-spin" /> : <ImageIcon className="h-6 w-6" />}
+                      <span className="text-sm font-medium">{uploading ? "Enviando..." : "Enviar imagem (recomendado 1600×540)"}</span>
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">Título <span className="font-normal text-muted-foreground">(interno, opcional)</span></label>
+                  <Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="Ex: Promoção de setembro" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">Link ao clicar <span className="font-normal text-muted-foreground">(opcional)</span></label>
+                  <Input value={form.linkUrl} onChange={(e) => setForm((f) => ({ ...f, linkUrl: e.target.value }))} placeholder="/catalogo?category=Laptops" />
+                </div>
+                <label className="flex items-center gap-4 p-4 border border-border/60 rounded-lg cursor-pointer hover:bg-secondary/20 transition-colors">
+                  <input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} className="h-5 w-5 rounded-md border-input bg-background text-primary focus:ring-primary" />
+                  <div>
+                    <div className="font-semibold text-sm text-foreground">Banner ativo</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">Desative para tirar do ar sem apagar</div>
+                  </div>
+                </label>
+              </form>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t border-border/50 shrink-0 bg-secondary/10">
+              <Button type="button" variant="outline" onClick={closeModal}>Cancelar</Button>
+              <Button type="submit" form="banner-form" className="jurb-cta" disabled={uploading || createBanner.isPending || updateBanner.isPending}>
+                {editingId ? "Salvar Alterações" : "Criar Banner"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

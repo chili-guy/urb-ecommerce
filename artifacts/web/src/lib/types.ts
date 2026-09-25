@@ -213,6 +213,8 @@ export type DashboardSummary = {
   products: number;
   inventoryUnits: number;
   lowStock: number;
+  visits7Days: number;
+  visitsTotal: number;
   salesByDay: { label: string; value: number }[];
   topProducts: { name: string; sales: number; revenue: number }[];
   mostViewed: { id: number; name: string; views: number; imageUrl: string }[];
@@ -223,6 +225,25 @@ export type DashboardSummary = {
     status: string;
     createdAt: string;
   }[];
+};
+
+/** Banner rotativo da home (tabela public.banners). */
+export type Banner = {
+  id: number;
+  imageUrl: string;
+  linkUrl: string | null;
+  title: string;
+  sortOrder: number;
+  active: boolean;
+  createdAt: string;
+};
+
+export type BannerInput = {
+  imageUrl: string;
+  linkUrl: string;
+  title: string;
+  sortOrder: number;
+  active: boolean;
 };
 
 // Linhas cruas do Postgres (snake_case) — usadas nos mapeadores de lib/api.ts.

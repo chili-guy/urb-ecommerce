@@ -8,6 +8,8 @@ import { PRODUCT_CONDITIONS } from "./types";
 import type {
   Address,
   AddressInput,
+  Banner,
+  BannerInput,
   Coupon,
   CouponInput,
   CouponPreview,
@@ -117,12 +119,18 @@ export type ProductQuery = {
   minRating?: number;
   inStock?: boolean;
   condition?: ProductCondition;
+  /** Filtra por uma lista de ids (ex: histórico de "vistos recentemente"). */
+  ids?: number[];
   sort?: ProductSort;
 };
 
 async function fetchProducts(params: ProductQuery): Promise<Product[]> {
+  // Lista vazia de ids nunca bate com nada — não precisa nem consultar o banco.
+  if (params.ids && params.ids.length === 0) return [];
+
   let q = supabase.from("products").select("*");
 
+  if (params.ids) q = q.in("id", params.ids);
   if (params.featured !== undefined) q = q.eq("featured", params.featured);
   if (params.category) q = q.eq("category", params.category);
   if (params.subcategory) q = q.eq("subcategory", params.subcategory);
@@ -726,9 +734,108 @@ export function useDashboardSummary(enabled = true) {
       const { data, error } = await supabase.rpc("admin_dashboard_summary");
       if (error) throw error;
       const summary = data as DashboardSummary;
-      // Tolera um banco ainda sem a migração 0004 (função antiga sem mostViewed).
-      return { ...summary, mostViewed: summary.mostViewed ?? [] };
+      // Tolera um banco ainda sem as migrações 0004/0007 (campos novos ausentes).
+      return {
+        ...summary,
+        mostViewed: summary.mostViewed ?? [],
+        visits7Days: summary.visits7Days ?? 0,
+        visitsTotal: summary.visitsTotal ?? 0,
+      };
     },
+  });
+}
+
+/** Conta 1 visita ao site por dia corrente. Best-effort, nunca quebra a página. */
+export async function incrementSiteVisit(): Promise<void> {
+  try {
+    await supabase.rpc("increment_site_visit");
+  } catch {
+    /* métrica não-crítica */
+  }
+}
+
+// ----------------------------------------------------------------- banners ---
+function mapBanner(r: Row): Banner {
+  return {
+    id: r.id as number,
+    imageUrl: r.image_url as string,
+    linkUrl: (r.link_url as string) ?? null,
+    title: (r.title as string) ?? "",
+    sortOrder: Number(r.sort_order ?? 0),
+    active: Boolean(r.active),
+    createdAt: r.created_at as string,
+  };
+}
+
+function toBannerRow(data: Partial<BannerInput>) {
+  const row: Row = {};
+  if (data.imageUrl !== undefined) row.image_url = data.imageUrl;
+  if (data.linkUrl !== undefined) row.link_url = data.linkUrl.trim() || null;
+  if (data.title !== undefined) row.title = data.title;
+  if (data.sortOrder !== undefined) row.sort_order = data.sortOrder;
+  if (data.active !== undefined) row.active = data.active;
+  return row;
+}
+
+/** @param activeOnly true = só os ativos, ordenados (usado na home). false/undefined = todos (admin). */
+export function useBanners(activeOnly = false) {
+  return useQuery({
+    queryKey: ["banners", activeOnly],
+    queryFn: async (): Promise<Banner[]> => {
+      let q = supabase.from("banners").select("*").order("sort_order", { ascending: true });
+      if (activeOnly) q = q.eq("active", true);
+      const { data, error } = await q;
+      if (error) {
+        // Banco ainda sem a migração 0007 — home/admin seguem sem banners.
+        if (error.code === "42P01" || error.code === "PGRST205") return [];
+        throw error;
+      }
+      return (data ?? []).map(mapBanner);
+    },
+  });
+}
+
+export function useCreateBanner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: BannerInput): Promise<Banner> => {
+      const { data, error } = await supabase
+        .from("banners")
+        .insert(toBannerRow(input))
+        .select("*")
+        .single();
+      if (error) throw error;
+      return mapBanner(data);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["banners"] }),
+  });
+}
+
+export function useUpdateBanner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<BannerInput> }): Promise<Banner> => {
+      const { data: row, error } = await supabase
+        .from("banners")
+        .update(toBannerRow(data))
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      return mapBanner(row);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["banners"] }),
+  });
+}
+
+export function useDeleteBanner() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await supabase.from("banners").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["banners"] }),
   });
 }
 

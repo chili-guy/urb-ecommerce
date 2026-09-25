@@ -1,7 +1,10 @@
-import { useProducts } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { useBanners, useProducts } from "@/lib/api";
+import { getRecentlyViewed } from "@/lib/recently-viewed";
 import { ProductCard } from "@/components/ProductCard";
 import { Link } from "wouter";
-import { ArrowRight } from "lucide-react";
+import type { Product } from "@/lib/types";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 
 const CATEGORY_SHORTCUTS = [
   "Laptops",
@@ -12,8 +15,162 @@ const CATEGORY_SHORTCUTS = [
   "Acessórios",
 ];
 
+function discountPct(p: Product): number {
+  if (!p.compareAtPrice || p.compareAtPrice <= p.price) return 0;
+  return Math.round(((p.compareAtPrice - p.price) / p.compareAtPrice) * 100);
+}
+
+function ProductGridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="flex h-[400px] animate-pulse flex-col rounded-xl border border-[#e4dfd7] bg-white p-3 sm:h-[560px] sm:rounded-2xl sm:p-4">
+          <div className="mb-4 h-[150px] w-full rounded-lg bg-[#eee9e1] sm:h-[250px]" />
+          <div className="mb-3 h-4 w-20 rounded bg-[#e8f5ec]" />
+          <div className="mb-2 h-5 w-full rounded bg-[#eee9e1]" />
+          <div className="mb-auto h-5 w-2/3 rounded bg-[#eee9e1]" />
+          <div className="mt-4 h-7 w-28 rounded bg-[#e6f2eb]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProductSection({
+  eyebrow,
+  title,
+  subtitle,
+  seeAllHref,
+  products,
+  isLoading,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  seeAllHref: string;
+  products: Product[] | undefined;
+  isLoading: boolean;
+}) {
+  if (!isLoading && (!products || products.length === 0)) return null;
+
+  return (
+    <section className="bg-[#f4f1eb] pb-14 md:pb-20">
+      <div className="mx-auto max-w-[1320px] px-4 sm:px-8 lg:px-12">
+        <div className="mb-5 flex items-end justify-between sm:mb-6">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[.22em] text-[#e26f00]">{eyebrow}</div>
+            <h2 className="mt-2 font-display text-2xl font-semibold tracking-[-.04em] sm:text-3xl md:text-4xl">{title}</h2>
+            <p className="mt-1.5 text-sm text-[#4f585d] sm:text-base">{subtitle}</p>
+          </div>
+          <Link href={seeAllHref} className="hidden items-center gap-2 text-sm font-bold uppercase tracking-[.12em] text-[#e26f00] transition-colors hover:text-[#111820] sm:flex">
+            Ver todos <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+
+        {isLoading ? (
+          <ProductGridSkeleton />
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
+            {products!.slice(0, 4).map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function BannerCarousel() {
+  const { data: banners } = useBanners(true);
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    setIndex(0);
+    if (!banners || banners.length < 2) return;
+    const id = setInterval(() => setIndex((i) => (i + 1) % banners.length), 5500);
+    return () => clearInterval(id);
+  }, [banners]);
+
+  if (!banners || banners.length === 0) return null;
+
+  const current = banners[index];
+  const image = (
+    <img
+      src={current.imageUrl}
+      alt={current.title || "Promoção UR3"}
+      className="h-full w-full object-cover"
+    />
+  );
+
+  return (
+    <section className="bg-[#f4f1eb] px-4 pt-6 sm:px-8 sm:pt-8 lg:px-12">
+      <div className="relative mx-auto aspect-[16/9] max-w-[1320px] overflow-hidden rounded-xl bg-[#111820] sm:aspect-[3/1]">
+        {current.linkUrl ? (
+          <Link href={current.linkUrl} className="block h-full w-full">
+            {image}
+          </Link>
+        ) : (
+          image
+        )}
+
+        {banners.length > 1 && (
+          <>
+            <button
+              type="button"
+              aria-label="Banner anterior"
+              onClick={() => setIndex((i) => (i - 1 + banners.length) % banners.length)}
+              className="absolute left-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-[#111820] shadow-md transition-colors hover:bg-white sm:left-4"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Próximo banner"
+              onClick={() => setIndex((i) => (i + 1) % banners.length)}
+              className="absolute right-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-[#111820] shadow-md transition-colors hover:bg-white sm:right-4"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+            <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1.5 sm:bottom-4">
+              {banners.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  aria-label={`Ver banner ${i + 1}`}
+                  onClick={() => setIndex(i)}
+                  className={`h-1.5 rounded-full transition-all ${
+                    i === index ? "w-5 bg-[#ff8a0a]" : "w-1.5 bg-white/60"
+                  }`}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function Home() {
   const { data: featuredProducts, isLoading } = useProducts({ featured: true, limit: 4 });
+  const { data: newestProducts, isLoading: isLoadingNewest } = useProducts({ sort: "newest", limit: 4 });
+  const { data: allProducts, isLoading: isLoadingDeals } = useProducts();
+
+  const topDeals = useMemo(() => {
+    return (allProducts ?? [])
+      .filter((p) => p.compareAtPrice && p.compareAtPrice > p.price)
+      .sort((a, b) => discountPct(b) - discountPct(a))
+      .slice(0, 4);
+  }, [allProducts]);
+
+  const recentIds = useMemo(() => getRecentlyViewed(), []);
+  const { data: recentlyViewedRaw, isLoading: isLoadingRecent } = useProducts({ ids: recentIds });
+  const recentlyViewed = useMemo(() => {
+    if (!recentlyViewedRaw) return recentlyViewedRaw;
+    const order = new Map(recentIds.map((id, i) => [id, i]));
+    return [...recentlyViewedRaw].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  }, [recentlyViewedRaw, recentIds]);
 
   return (
     <main className="min-h-screen bg-[#f4f1eb] text-[#111820]">
@@ -63,46 +220,49 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="destaques" className="bg-[#f4f1eb] pb-14 pt-8 md:pb-20 md:pt-10">
-        <div id="oferta" className="mx-auto max-w-[1320px] px-4 sm:px-8 lg:px-12">
-          <div className="mb-5 flex items-end justify-between sm:mb-6">
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-[.22em] text-[#e26f00]">Escolhas da semana</div>
-              <h2 className="mt-2 font-display text-2xl font-semibold tracking-[-.04em] sm:text-3xl md:text-4xl">Destaques</h2>
-              <p className="mt-1.5 text-sm text-[#4f585d] sm:text-base">O que há de melhor em nossa loja esta semana.</p>
-            </div>
-            <Link href="/catalogo" className="hidden items-center gap-2 text-sm font-bold uppercase tracking-[.12em] text-[#e26f00] transition-colors hover:text-[#111820] sm:flex">
-              Ver todos <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
+      <BannerCarousel />
 
-          {isLoading ? (
-            <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="flex h-[400px] animate-pulse flex-col rounded-xl border border-[#e4dfd7] bg-white p-3 sm:h-[560px] sm:rounded-2xl sm:p-4">
-                  <div className="mb-4 h-[150px] w-full rounded-lg bg-[#eee9e1] sm:h-[250px]" />
-                  <div className="mb-3 h-4 w-20 rounded bg-[#e8f5ec]" />
-                  <div className="mb-2 h-5 w-full rounded bg-[#eee9e1]" />
-                  <div className="mb-auto h-5 w-2/3 rounded bg-[#eee9e1]" />
-                  <div className="mt-4 h-7 w-28 rounded bg-[#e6f2eb]" />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
-              {featuredProducts?.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
-          )}
-
-          <div className="mt-6 sm:hidden">
-            <Link href="/catalogo" className="inline-flex min-h-12 w-full items-center justify-center bg-[#ff8a0a] px-6 text-sm font-bold uppercase tracking-[.12em] text-[#111820]">
-              Ver todos os produtos
-            </Link>
-          </div>
+      <div id="destaques" className="pt-8 md:pt-10">
+        <div id="oferta">
+          <ProductSection
+            eyebrow="Escolhas da semana"
+            title="Destaques"
+            subtitle="O que há de melhor em nossa loja esta semana."
+            seeAllHref="/catalogo"
+            products={featuredProducts}
+            isLoading={isLoading}
+          />
         </div>
-      </section>
+      </div>
+
+      <ProductSection
+        eyebrow="Direto da bancada"
+        title="Recém-adicionados"
+        subtitle="Os últimos itens que entraram no catálogo."
+        seeAllHref="/catalogo"
+        products={newestProducts}
+        isLoading={isLoadingNewest}
+      />
+
+      <ProductSection
+        eyebrow="Preço que a bancada aprova"
+        title="Oferta da semana"
+        subtitle="Descontos reais, enquanto durar o estoque."
+        seeAllHref="/ofertas"
+        products={topDeals}
+        isLoading={isLoadingDeals}
+      />
+
+      {recentIds.length > 0 && (
+        <ProductSection
+          eyebrow="Continue de onde parou"
+          title="Vistos recentemente"
+          subtitle="Produtos que você deu uma olhada por aqui."
+          seeAllHref="/catalogo"
+          products={recentlyViewed}
+          isLoading={isLoadingRecent}
+        />
+      )}
     </main>
   );
 }

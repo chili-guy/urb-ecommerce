@@ -2,15 +2,17 @@ import { supabase } from "./supabase";
 
 /** Bucket público criado em supabase/migrations/0004_feature_pack.sql. */
 export const PRODUCT_IMAGE_BUCKET = "product-images";
+/** Bucket público criado em supabase/migrations/0007_banners_and_visits.sql. */
+export const SITE_MEDIA_BUCKET = "site-media";
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"];
 
 /**
- * Envia um arquivo de imagem para o Storage e devolve a URL pública.
- * A escrita no bucket é restrita à equipe pela RLS de storage.objects.
+ * Envia um arquivo de imagem pro Storage e devolve a URL pública.
+ * A escrita nos buckets é restrita à equipe pela RLS de storage.objects.
  */
-export async function uploadProductImage(file: File): Promise<string> {
+async function uploadImage(bucket: string, file: File): Promise<string> {
   if (!ALLOWED.includes(file.type)) {
     throw new Error("Formato inválido. Use JPG, PNG, WebP ou GIF.");
   }
@@ -22,7 +24,7 @@ export async function uploadProductImage(file: File): Promise<string> {
   const path = `${crypto.randomUUID()}.${ext}`;
 
   const { error } = await supabase.storage
-    .from(PRODUCT_IMAGE_BUCKET)
+    .from(bucket)
     .upload(path, file, {
       cacheControl: "31536000",
       contentType: file.type,
@@ -30,6 +32,13 @@ export async function uploadProductImage(file: File): Promise<string> {
     });
   if (error) throw error;
 
-  return supabase.storage.from(PRODUCT_IMAGE_BUCKET).getPublicUrl(path).data
-    .publicUrl;
+  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+export function uploadProductImage(file: File): Promise<string> {
+  return uploadImage(PRODUCT_IMAGE_BUCKET, file);
+}
+
+export function uploadSiteMedia(file: File): Promise<string> {
+  return uploadImage(SITE_MEDIA_BUCKET, file);
 }
