@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "wouter";
 import { useCategories, useProducts, type ProductSort } from "@/lib/api";
 import { PRODUCT_CONDITIONS, PRODUCT_CONDITION_LABELS, type Product, type ProductCondition } from "@/lib/types";
+import { normalizeSearch } from "@/lib/utils";
 import { ProductCard } from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,30 @@ function sortProducts(list: Product[], sort: ProductSort): Product[] {
   }
 }
 
+/**
+ * Filtra e ordena por relevância de busca, cego a acento: nome que começa com
+ * o termo primeiro, depois nome que contém, depois só a descrição — assim
+ * "memória RAM" traz as memórias primeiro e só depois, por ex., um celular
+ * cuja descrição cita "memória RAM".
+ */
+function rankBySearch(list: Product[], search: string, sort: ProductSort): Product[] {
+  const query = normalizeSearch(search);
+  if (!query) return sortProducts(list, sort);
+
+  const tokens = query.split(/\s+/).filter(Boolean);
+  const matches = (text: string) =>
+    text.includes(query) || (tokens.length > 1 && tokens.every((t) => text.includes(t)));
+
+  const tiers: Product[][] = [[], [], []];
+  for (const p of list) {
+    const name = normalizeSearch(p.name);
+    if (name.startsWith(query)) tiers[0].push(p);
+    else if (matches(name)) tiers[1].push(p);
+    else if (matches(normalizeSearch(p.description))) tiers[2].push(p);
+  }
+  return tiers.flatMap((tier) => sortProducts(tier, sort));
+}
+
 export default function Catalog() {
   const routeParams = useParams<{ category?: string; subcategory?: string }>();
   const [urlParams] = useSearchParams();
@@ -93,7 +118,6 @@ export default function Catalog() {
   }, [urlParams]);
 
   const { data: products, isLoading } = useProducts({
-    search: search || undefined,
     category: category !== "Todos" ? category : undefined,
   });
 
@@ -143,8 +167,8 @@ export default function Catalog() {
     if (minRating > 0) list = list.filter((p) => p.rating >= minRating);
     if (condition !== "Todas") list = list.filter((p) => p.condition === condition);
     if (inStockOnly) list = list.filter((p) => p.stock > 0);
-    return sortProducts(list, sort);
-  }, [products, subcategory, priceMin, priceMax, minRating, condition, inStockOnly, sort]);
+    return rankBySearch(list, search, sort);
+  }, [products, subcategory, priceMin, priceMax, minRating, condition, inStockOnly, sort, search]);
 
   const searchField = (
     <div className="relative">

@@ -109,7 +109,6 @@ const ORDER_SELECT = "*, order_items(*)";
 export type ProductSort = "relevance" | "price-asc" | "price-desc" | "rating" | "newest";
 
 export type ProductQuery = {
-  search?: string;
   category?: string;
   subcategory?: string;
   featured?: boolean;
@@ -135,10 +134,6 @@ async function fetchProducts(params: ProductQuery): Promise<Product[]> {
   if (params.category) q = q.eq("category", params.category);
   if (params.subcategory) q = q.eq("subcategory", params.subcategory);
   if (params.condition) q = q.eq("condition", params.condition);
-  if (params.search) {
-    const term = params.search.replace(/[%,]/g, "");
-    q = q.or(`name.ilike.%${term}%,description.ilike.%${term}%`);
-  }
   if (params.minPrice !== undefined) q = q.gte("price", params.minPrice);
   if (params.maxPrice !== undefined) q = q.lte("price", params.maxPrice);
   if (params.minRating !== undefined) q = q.gte("rating", params.minRating);

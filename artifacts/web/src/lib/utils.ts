@@ -16,6 +16,15 @@ export function generateSlug(name: string) {
   return name.toLowerCase().replace(/[\s_]+/g, '-').replace(/[^\w-]+/g, '');
 }
 
+/** Baixa a caixa e remove acentos — usado na busca pra "memoria" achar "Memória" e vice-versa. */
+export function normalizeSearch(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 /** Converte um link do YouTube (watch/shorts/youtu.be) em URL de embed, ou null. */
 export function youtubeEmbedUrl(url: string): string | null {
   try {
