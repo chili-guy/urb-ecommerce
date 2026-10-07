@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
 import { Link } from "wouter";
 import { formatCurrency } from "@/lib/utils";
 import { PRODUCT_CONDITION_LABELS, type Product } from "@/lib/types";
@@ -18,14 +18,11 @@ export function ProductCard({ product }: { product: Product }) {
   const gallery = [transparentImageUrl, ...product.images];
   const activeSrc = activeImage === 0 ? transparentImageUrl : gallery[activeImage];
 
-  // Carrossel automático: troca de foto a cada 5s, sem depender do mouse.
-  useEffect(() => {
-    if (gallery.length <= 1) return;
-    const id = setInterval(() => {
-      setActiveImage((i) => (i + 1) % gallery.length);
-    }, 5000);
-    return () => clearInterval(id);
-  }, [gallery.length]);
+  const handleSelectImage = (event: MouseEvent<HTMLButtonElement>, index: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setActiveImage(index);
+  };
 
   const hasDiscount =
     product.compareAtPrice !== null &&
@@ -81,8 +78,11 @@ export function ProductCard({ product }: { product: Product }) {
           {gallery.length > 1 && (
             <div className="absolute bottom-1.5 left-1/2 z-10 flex -translate-x-1/2 gap-1 sm:bottom-2.5">
               {gallery.map((_, i) => (
-                <span
+                <button
                   key={i}
+                  type="button"
+                  aria-label={`Ver foto ${i + 1} de ${product.name}`}
+                  onClick={(event) => handleSelectImage(event, i)}
                   className={`h-1.5 rounded-full shadow-sm transition-all ${
                     i === activeImage ? "w-3.5 bg-primary" : "w-1.5 bg-[#111820]/25"
                   }`}
