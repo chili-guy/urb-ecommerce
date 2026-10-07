@@ -896,32 +896,121 @@ export type BlingSyncResult = {
   error?: string;
 };
 
+/** Chama uma Edge Function da Bling; em resposta não-2xx, lança com a mensagem real do corpo. */
+async function invokeBling<T>(fn: string, body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(fn, { method: "POST", body });
+  if (error) {
+    let message = error.message;
+    try {
+      const payload = await (error as { context?: Response }).context?.json();
+      if (payload?.error) message = payload.error === "not_connected" ? "Bling não conectada." : String(payload.error);
+    } catch {
+      /* corpo ilegível: fica a mensagem genérica */
+    }
+    throw new Error(message);
+  }
+  return data as T;
+}
+
 export function useSyncBlingStock() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (mode: BlingSyncMode): Promise<BlingSyncResult> => {
-      const { data, error } = await supabase.functions.invoke("bling-sync-stock", {
-        method: "POST",
-        body: { mode },
-      });
-      if (error) {
-        // Resposta não-2xx: a mensagem útil vem no corpo da resposta da função.
-        let message = error.message;
-        try {
-          const body = await (error as { context?: Response }).context?.json();
-          if (body?.error) message = body.error === "not_connected" ? "Bling não conectada." : String(body.error);
-        } catch {
-          /* corpo ilegível: fica a mensagem genérica */
-        }
-        throw new Error(message);
-      }
-      return data as BlingSyncResult;
-    },
+    mutationFn: (mode: BlingSyncMode) => invokeBling<BlingSyncResult>("bling-sync-stock", { mode }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bling-status"] });
       qc.invalidateQueries({ queryKey: ["bling-stock-items"] });
       qc.invalidateQueries({ queryKey: ["bling-sync-runs"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+}
+
+// ---- importação de produtos da Bling -------------------------------------------
+export type BlingCandidate = {
+  id: number;
+  sku: string;
+  name: string;
+  price: number;
+  stock: number | null;
+  imageUrl: string | null;
+};
+
+export type BlingCandidates = {
+  blingTotal: number;
+  alreadyOnSite: number;
+  withoutCode: number;
+  candidates: BlingCandidate[];
+};
+
+export type BlingImportItem = {
+  id: number;
+  status: "imported" | "skipped" | "error";
+  sku?: string;
+  name?: string;
+  productId?: number;
+  message?: string;
+  /** Entrou com estoque 0: fica oculto na loja até ter saldo. */
+  hidden?: boolean;
+};
+
+/** Lista (sob demanda, via `refetch`) os produtos ativos da Bling que ainda não existem no site. */
+export function useBlingImportCandidates() {
+  return useQuery({
+    queryKey: ["bling-import-candidates"],
+    enabled: false,
+    staleTime: Infinity,
+    retry: false,
+    queryFn: async (): Promise<BlingCandidates> => {
+      const r = await invokeBling<BlingCandidates & { ok: boolean; error?: string }>("bling-import", { action: "list" });
+      if (!r.ok) throw new Error(r.error ?? "Falha ao listar produtos da Bling");
+      return r;
+    },
+  });
+}
+
+const IMPORT_CHUNK = 10; // a função aceita até 10 por chamada (limite de tempo + ritmo da API da Bling)
+
+export function useImportFromBling() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      ids: number[];
+      category?: string;
+      onProgress?: (done: number, total: number) => void;
+    }): Promise<BlingImportItem[]> => {
+      const results: BlingImportItem[] = [];
+      for (let i = 0; i < args.ids.length; i += IMPORT_CHUNK) {
+        const chunk = args.ids.slice(i, i + IMPORT_CHUNK);
+        try {
+          const r = await invokeBling<{ ok: boolean; error?: string; results?: BlingImportItem[] }>("bling-import", {
+            action: "import",
+            ids: chunk,
+            category: args.category,
+          });
+          if (!r.ok) throw new Error(r.error ?? "Falha ao importar");
+          results.push(...(r.results ?? []));
+        } catch (err) {
+          // Um lote que falha inteiro não derruba os outros nem apaga o que já entrou.
+          const message = err instanceof Error ? err.message : "Falha ao importar";
+          chunk.forEach((id) => results.push({ id, status: "error", message }));
+        }
+        args.onProgress?.(Math.min(i + IMPORT_CHUNK, args.ids.length), args.ids.length);
+      }
+      return results;
+    },
+    onSuccess: (results) => {
+      // Sai da lista o que entrou (ou que já existia): não faz sentido continuar oferecendo.
+      const gone = new Set(
+        results
+          .filter((r) => r.status === "imported" || (r.status === "skipped" && r.message?.startsWith("Já existe")))
+          .map((r) => r.id),
+      );
+      qc.setQueryData<BlingCandidates>(["bling-import-candidates"], (old) =>
+        old ? { ...old, candidates: old.candidates.filter((c) => !gone.has(c.id)) } : old,
+      );
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["bling-stock-items"] });
     },
   });
 }

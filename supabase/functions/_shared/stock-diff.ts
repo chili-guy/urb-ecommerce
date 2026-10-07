@@ -49,7 +49,7 @@ export function extractStock(produto: BlingProductLite): number | null {
   return typeof saldo === "number" && Number.isFinite(saldo) ? Math.max(0, Math.floor(saldo)) : null;
 }
 
-function skuKey(sku: string | null | undefined): string {
+export function skuKey(sku: string | null | undefined): string {
   return (sku ?? "").trim().toUpperCase();
 }
 

@@ -48,6 +48,7 @@ import {
   type Role,
 } from "@/lib/types";
 import { formatCurrency, normalizeSearch } from "@/lib/utils";
+import { BlingImportPanel } from "@/components/BlingImportPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -2234,6 +2235,8 @@ function IntegrationsTab() {
               </div>
             </CardContent>
           </Card>
+
+          <BlingImportPanel />
 
           <Card className="shadow-sm border-border/60">
             <CardHeader className="border-b border-border/30 pb-4 mb-4">

@@ -8,57 +8,11 @@
 //
 // Deploy: supabase functions deploy bling-sync-stock
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
-import { BLING_PRODUCTS_URL, refreshAccessToken } from "../_shared/bling.ts";
+import { BLING_PACE_MS, BLING_PRODUCTS_URL, blingGet, getValidAccessToken, sleep } from "../_shared/bling.ts";
+import { CORS_HEADERS, authenticateStaff, json, serviceClient } from "../_shared/http.ts";
 import { diffStock, type BlingProductLite, type LocalProductLite } from "../_shared/stock-diff.ts";
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
 type Mode = "sync" | "check";
-
-type BlingConnection = {
-  access_token: string | null;
-  refresh_token: string | null;
-  token_expires_at: string | null;
-};
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-  });
-}
-
-async function getValidAccessToken(serviceClient: ReturnType<typeof createClient>): Promise<string> {
-  const { data: conn, error } = await serviceClient
-    .from("bling_connection")
-    .select("access_token, refresh_token, token_expires_at")
-    .eq("id", 1)
-    .maybeSingle<BlingConnection>();
-  if (error) throw error;
-  if (!conn?.access_token || !conn.refresh_token) {
-    throw new Error("not_connected");
-  }
-
-  const expiresAt = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0;
-  const expiringSoon = expiresAt - Date.now() < 5 * 60 * 1000; // margem de 5min
-  if (!expiringSoon) return conn.access_token;
-
-  const refreshed = await refreshAccessToken(conn.refresh_token);
-  await serviceClient
-    .from("bling_connection")
-    .update({
-      access_token: refreshed.access_token,
-      refresh_token: refreshed.refresh_token,
-      token_expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", 1);
-  return refreshed.access_token;
-}
 
 async function fetchAllBlingProducts(accessToken: string): Promise<BlingProductLite[]> {
   const all: BlingProductLite[] = [];
@@ -66,14 +20,11 @@ async function fetchAllBlingProducts(accessToken: string): Promise<BlingProductL
     const url = new URL(BLING_PRODUCTS_URL);
     url.searchParams.set("pagina", String(pagina));
     url.searchParams.set("limite", "100");
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
-    });
-    if (!res.ok) throw new Error(`Bling /produtos falhou (${res.status}): ${await res.text()}`);
-    const body = await res.json();
+    const body = await blingGet(url.toString(), accessToken);
     const page: BlingProductLite[] = body.data ?? [];
     all.push(...page);
     if (page.length < 100) break;
+    await sleep(BLING_PACE_MS);
   }
   return all;
 }
@@ -81,11 +32,7 @@ async function fetchAllBlingProducts(accessToken: string): Promise<BlingProductL
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
 
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const callerClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data: isStaff } = await callerClient.rpc("is_staff");
+  const { isStaff, userId: triggeredBy } = await authenticateStaff(req);
   if (!isStaff) return json({ error: "forbidden" }, 403);
 
   let mode: Mode = "sync";
@@ -96,19 +43,14 @@ Deno.serve(async (req) => {
     /* sem corpo = sincronizar */
   }
 
-  const serviceClient = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
-  const { data: userData } = await callerClient.auth.getUser(authHeader.replace(/^Bearer\s+/i, ""));
-  const triggeredBy = userData.user?.id ?? null;
+  const db = serviceClient();
   const startedAt = new Date().toISOString();
 
   try {
-    const accessToken = await getValidAccessToken(serviceClient);
+    const accessToken = await getValidAccessToken(db);
     const blingProducts = await fetchAllBlingProducts(accessToken);
 
-    const { data: localProducts, error: localErr } = await serviceClient
+    const { data: localProducts, error: localErr } = await db
       .from("products")
       .select("id, sku, stock");
     if (localErr) throw localErr;
@@ -117,7 +59,7 @@ Deno.serve(async (req) => {
 
     let updateFailures = 0;
     for (const { id, stock } of diff.toUpdate) {
-      const { error } = await serviceClient.from("products").update({ stock }).eq("id", id);
+      const { error } = await db.from("products").update({ stock }).eq("id", id);
       if (error) {
         updateFailures++;
         console.error("[bling-sync-stock] falha ao atualizar produto", id, error);
@@ -132,12 +74,12 @@ Deno.serve(async (req) => {
     // Acompanhamento é melhor-esforço: se a migração 0009 ainda não rodou, a
     // sincronização em si continua valendo.
     const checkedAt = new Date().toISOString();
-    const { error: itemsErr } = await serviceClient
+    const { error: itemsErr } = await db
       .from("bling_stock_items")
       .upsert(diff.items.map((i) => ({ ...i, checked_at: checkedAt })), { onConflict: "product_id" });
     if (itemsErr) console.error("[bling-sync-stock] bling_stock_items", itemsErr);
 
-    const { error: runErr } = await serviceClient.from("bling_sync_runs").insert({
+    const { error: runErr } = await db.from("bling_sync_runs").insert({
       started_at: startedAt,
       mode,
       status: updateFailures > 0 ? "error" : "ok",
@@ -152,7 +94,7 @@ Deno.serve(async (req) => {
     });
     if (runErr) console.error("[bling-sync-stock] bling_sync_runs", runErr);
 
-    await serviceClient
+    await db
       .from("bling_connection")
       .update({
         last_synced_at: checkedAt,
@@ -174,14 +116,14 @@ Deno.serve(async (req) => {
     const message = err instanceof Error ? err.message : "unknown_error";
     console.error("[bling-sync-stock]", err);
 
-    await serviceClient.from("bling_sync_runs").insert({
+    await db.from("bling_sync_runs").insert({
       started_at: startedAt,
       mode,
       status: "error",
       error: message,
       triggered_by: triggeredBy,
     });
-    await serviceClient
+    await db
       .from("bling_connection")
       .update({ last_synced_at: new Date().toISOString(), last_sync_status: "error", last_sync_error: message })
       .eq("id", 1);
