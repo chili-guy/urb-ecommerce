@@ -24,6 +24,23 @@ export function ProductCard({ product }: { product: Product }) {
     setActiveImage(index);
   };
 
+  // Divide a área da imagem em uma faixa por foto: a posição horizontal do
+  // mouse define qual foto aparece (esquerda = anteriores, direita = seguintes).
+  const handleGalleryMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    if (gallery.length <= 1) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientX - rect.left) / rect.width;
+    const index = Math.min(
+      gallery.length - 1,
+      Math.max(0, Math.floor(ratio * gallery.length)),
+    );
+    setActiveImage(index);
+  };
+
+  const handleGalleryMouseLeave = () => {
+    setActiveImage(0);
+  };
+
   const hasDiscount =
     product.compareAtPrice !== null &&
     product.compareAtPrice !== undefined &&
@@ -57,7 +74,11 @@ export function ProductCard({ product }: { product: Product }) {
           </span>
         )}
 
-        <div className="relative flex h-[150px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-2 sm:h-[250px] sm:rounded-xl sm:px-4 sm:pt-4">
+        <div
+          className="relative flex h-[150px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-2 sm:h-[250px] sm:rounded-xl sm:px-4 sm:pt-4"
+          onMouseMove={handleGalleryMouseMove}
+          onMouseLeave={handleGalleryMouseLeave}
+        >
           <img
             key={activeImage}
             src={activeSrc}
