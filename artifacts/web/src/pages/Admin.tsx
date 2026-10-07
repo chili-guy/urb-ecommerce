@@ -6,6 +6,8 @@ import {
   useBanners,
   useBlingDisconnect,
   useBlingStatus,
+  useBlingStockItems,
+  useBlingSyncRuns,
   useCategories,
   useCoupons,
   useCreateBanner,
@@ -25,6 +27,8 @@ import {
   useUpdateOrderStatus,
   useUpdateProduct,
   getBlingConnectUrl,
+  type BlingStockItem,
+  type BlingSyncMode,
 } from "@/lib/api";
 import { uploadProductImage, uploadSiteMedia } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
@@ -43,7 +47,7 @@ import {
   type ProductSpec,
   type Role,
 } from "@/lib/types";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, normalizeSearch } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1929,22 +1933,74 @@ function ReportsTab() {
   );
 }
 
+type StockFilter = "all" | "diverge" | "unmatched" | "zeroed";
+
+function blingItemState(i: BlingStockItem) {
+  if (i.status !== "ok") return "unmatched" as const;
+  return i.blingStock === i.siteStock ? ("synced" as const) : ("diverge" as const);
+}
+
 function IntegrationsTab() {
   const { data: bling, isLoading } = useBlingStatus();
   const disconnect = useBlingDisconnect();
   const sync = useSyncBlingStock();
   const connectUrl = getBlingConnectUrl();
+  const connected = Boolean(bling?.connected);
+  const { data: items } = useBlingStockItems(connected);
+  const { data: runs } = useBlingSyncRuns(connected);
 
-  const handleSync = () => {
-    sync.mutate(undefined, {
+  const [filter, setFilter] = useState<StockFilter>("all");
+  const [term, setTerm] = useState("");
+
+  const stats = useMemo(() => {
+    const list = items ?? [];
+    return {
+      synced: list.filter((i) => blingItemState(i) === "synced").length,
+      diverge: list.filter((i) => blingItemState(i) === "diverge").length,
+      unmatched: list.filter((i) => blingItemState(i) === "unmatched").length,
+      zeroed: list.filter((i) => i.status === "ok" && i.blingStock === 0).length,
+      // Vão sair da loja na próxima sincronização: zerados na Bling e ainda com estoque no site.
+      willHide: list.filter((i) => i.status === "ok" && i.blingStock === 0 && (i.siteStock ?? 0) > 0).length,
+      lastCheck: list.reduce<string | null>((max, i) => (max && max > i.checkedAt ? max : i.checkedAt), null),
+    };
+  }, [items]);
+
+  const visible = useMemo(() => {
+    let list = items ?? [];
+    if (filter === "diverge") list = list.filter((i) => blingItemState(i) === "diverge");
+    else if (filter === "unmatched") list = list.filter((i) => blingItemState(i) === "unmatched");
+    else if (filter === "zeroed") list = list.filter((i) => i.status === "ok" && i.blingStock === 0);
+    const q = normalizeSearch(term);
+    if (q) {
+      list = list.filter((i) => normalizeSearch(i.name).includes(q) || normalizeSearch(i.sku ?? "").includes(q));
+    }
+    const rank = { diverge: 0, unmatched: 1, synced: 2 } as const;
+    return [...list].sort(
+      (a, b) => rank[blingItemState(a)] - rank[blingItemState(b)] || a.name.localeCompare(b.name, "pt-BR"),
+    );
+  }, [items, filter, term]);
+
+  const run = (mode: BlingSyncMode) => {
+    if (mode === "sync") {
+      if (!items || items.length === 0) {
+        if (!confirm("Ainda não houve nenhuma conferência. Recomendo clicar em \"Conferir estoque\" antes, pra ver o que vai mudar. Sincronizar mesmo assim?")) return;
+      } else if (stats.willHide > 0) {
+        if (!confirm(`${stats.willHide} produto(s) estão zerados na Bling e vão sair da loja ao sincronizar. Continuar?`)) return;
+      }
+    }
+    sync.mutate(mode, {
       onSuccess: (result) => {
-        if (result.ok) {
-          toast.success(`Estoque sincronizado: ${result.updated ?? 0} produto(s) atualizado(s)`);
+        if (!result.ok) {
+          toast.error(result.error ?? "Falha ao falar com a Bling");
+        } else if (mode === "check") {
+          toast.success(
+            result.changed ? `Conferência: ${result.changed} produto(s) diferem da Bling` : "Conferência: o site já está igual à Bling",
+          );
         } else {
-          toast.error(result.error ?? "Falha ao sincronizar");
+          toast.success(`Estoque sincronizado: ${result.updated ?? 0} produto(s) atualizado(s)`);
         }
       },
-      onError: () => toast.error("Falha ao sincronizar com a Bling"),
+      onError: (err) => toast.error(err instanceof Error ? err.message : "Falha ao falar com a Bling"),
     });
   };
 
@@ -1956,14 +2012,21 @@ function IntegrationsTab() {
     });
   };
 
+  const filterChips: { id: StockFilter; label: string; count: number }[] = [
+    { id: "all", label: "Todos", count: items?.length ?? 0 },
+    { id: "diverge", label: "Diferentes", count: stats.diverge },
+    { id: "unmatched", label: "Sem par na Bling", count: stats.unmatched },
+    { id: "zeroed", label: "Zerados", count: stats.zeroed },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-display font-bold text-foreground">Integrações</h2>
-        <p className="text-sm text-muted-foreground mt-1">Conexões com sistemas externos.</p>
+        <p className="text-sm text-muted-foreground mt-1">Conexões com sistemas externos e acompanhamento da sincronização.</p>
       </div>
 
-      <Card className="shadow-sm border-border/60 max-w-xl">
+      <Card className="shadow-sm border-border/60">
         <CardHeader className="flex flex-row items-center justify-between border-b border-border/30 pb-4 mb-4">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-lg bg-secondary/60">
@@ -1971,50 +2034,60 @@ function IntegrationsTab() {
             </div>
             <div>
               <CardTitle className="text-base">Bling</CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">Sincronização de estoque por SKU</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Estoque comparado produto a produto, pelo SKU</p>
             </div>
           </div>
           {!isLoading && (
             <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${
-              bling?.connected
+              connected
                 ? "bg-green-500/10 text-green-700 border-green-500/30 dark:text-green-300"
                 : "bg-secondary text-muted-foreground border-border/50"
             }`}>
-              {bling?.connected ? "Conectado" : "Desconectado"}
+              {connected ? "Conectado" : "Desconectado"}
             </span>
           )}
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoading ? (
             <div className="h-16 animate-pulse rounded-lg bg-secondary" />
-          ) : bling?.connected ? (
+          ) : connected ? (
             <>
               <div className="space-y-1 text-sm text-muted-foreground">
-                {bling.connectedAt && (
-                  <p>Conectado em {new Date(bling.connectedAt).toLocaleString("pt-BR")}</p>
-                )}
+                {bling?.connectedAt && <p>Conectado em {new Date(bling.connectedAt).toLocaleString("pt-BR")}</p>}
                 <p>
-                  Última sincronização:{" "}
-                  {bling.lastSyncedAt ? new Date(bling.lastSyncedAt).toLocaleString("pt-BR") : "ainda não rodou"}
-                  {bling.lastSyncStatus === "error" && (
+                  Última execução:{" "}
+                  {bling?.lastSyncedAt ? new Date(bling.lastSyncedAt).toLocaleString("pt-BR") : "ainda não rodou"}
+                  {bling?.lastSyncStatus === "error" && (
                     <span className="ml-2 text-destructive">— falhou: {bling.lastSyncError}</span>
                   )}
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
-                <Button onClick={handleSync} disabled={sync.isPending} className="jurb-cta">
-                  <RefreshCw className={`h-4 w-4 mr-2 ${sync.isPending ? "animate-spin" : ""}`} />
+                <Button variant="outline" onClick={() => run("check")} disabled={sync.isPending}>
+                  {sync.isPending && sync.variables === "check" ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <PackageSearch className="h-4 w-4 mr-2" />
+                  )}
+                  Conferir estoque
+                </Button>
+                <Button onClick={() => run("sync")} disabled={sync.isPending} className="jurb-cta">
+                  <RefreshCw className={`h-4 w-4 mr-2 ${sync.isPending && sync.variables === "sync" ? "animate-spin" : ""}`} />
                   Sincronizar agora
                 </Button>
-                <Button variant="outline" onClick={handleDisconnect} disabled={disconnect.isPending}>
+                <Button variant="ghost" onClick={handleDisconnect} disabled={disconnect.isPending} className="text-muted-foreground">
                   <Unplug className="h-4 w-4 mr-2" /> Desconectar
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                <strong>Conferir</strong> só compara e mostra as diferenças, sem mexer em nada.{" "}
+                <strong>Sincronizar</strong> grava no site o estoque da Bling (produto zerado some da loja).
+              </p>
             </>
           ) : connectUrl ? (
             <>
               <p className="text-sm text-muted-foreground">
-                Conecte sua conta Bling pra manter o estoque do site sincronizado automaticamente.
+                Conecte sua conta Bling pra manter o estoque do site sincronizado e acompanhar tudo por aqui.
               </p>
               <Button asChild className="jurb-cta">
                 <a href={connectUrl}>
@@ -2030,9 +2103,182 @@ function IntegrationsTab() {
           )}
         </CardContent>
       </Card>
+
+      {connected && (
+        <>
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {[
+              { label: "Iguais à Bling", value: stats.synced, hint: "estoque já confere", tone: "text-green-600" },
+              { label: "Diferentes", value: stats.diverge, hint: "mudam ao sincronizar", tone: stats.diverge > 0 ? "text-amber-600" : "text-foreground" },
+              { label: "Sem par na Bling", value: stats.unmatched, hint: "SKU não encontrado", tone: stats.unmatched > 0 ? "text-destructive" : "text-foreground" },
+              { label: "Zerados na Bling", value: stats.zeroed, hint: "ocultos na loja", tone: "text-foreground" },
+            ].map((k) => (
+              <Card key={k.label} className="border-border/60 shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">{k.label}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className={`text-2xl font-bold ${k.tone}`}>{k.value}</div>
+                  <p className="text-xs text-muted-foreground mt-1">{k.hint}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="shadow-sm border-border/60">
+            <CardHeader className="border-b border-border/30 pb-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle className="text-lg">Estoque: site × Bling</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {stats.lastCheck
+                      ? `Última checagem: ${new Date(stats.lastCheck).toLocaleString("pt-BR")}`
+                      : "Nenhuma checagem ainda — clique em \"Conferir estoque\"."}
+                  </p>
+                </div>
+                <div className="relative sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por nome ou SKU..."
+                    value={term}
+                    onChange={(e) => setTerm(e.target.value)}
+                    className="pl-9 h-9"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 pt-3">
+                {filterChips.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setFilter(c.id)}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                      filter === c.id
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border/60 text-muted-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    {c.label} <span className="opacity-70">({c.count})</span>
+                  </button>
+                ))}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-secondary/30 text-muted-foreground text-xs uppercase tracking-wider font-semibold border-b border-border/50">
+                    <tr>
+                      <th className="px-6 py-3">Produto</th>
+                      <th className="px-6 py-3 text-right">No site</th>
+                      <th className="px-6 py-3 text-right">Na Bling</th>
+                      <th className="px-6 py-3">Situação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {visible.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-10 text-center text-muted-foreground">
+                          {(items?.length ?? 0) === 0 ? "Nada para mostrar ainda." : "Nenhum produto neste filtro."}
+                        </td>
+                      </tr>
+                    ) : (
+                      visible.map((i) => {
+                        const state = blingItemState(i);
+                        const willLeave = state === "diverge" && i.blingStock === 0;
+                        return (
+                          <tr key={i.productId} className="hover:bg-secondary/10 transition-colors">
+                            <td className="px-6 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="h-9 w-9 shrink-0 overflow-hidden rounded border border-border/50 bg-white">
+                                  {i.imageUrl && <img src={i.imageUrl} alt="" className="h-full w-full object-contain p-0.5 mix-blend-multiply" />}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-medium text-foreground line-clamp-1">{i.name}</div>
+                                  <div className="font-mono text-[11px] text-muted-foreground">{i.sku ?? "sem SKU"}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-3 text-right font-mono">
+                              {i.siteStock ?? "—"}
+                              {i.applied && i.previousStock !== null && (
+                                <span className="block text-[10px] text-muted-foreground">era {i.previousStock}</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-3 text-right font-mono">{i.blingStock ?? "—"}</td>
+                            <td className="px-6 py-3">
+                              {i.status === "not_found" && (
+                                <span className="inline-flex rounded-full border border-destructive/20 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">SKU não está na Bling</span>
+                              )}
+                              {i.status === "no_sku" && (
+                                <span className="inline-flex rounded-full border border-destructive/20 bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">Produto sem SKU</span>
+                              )}
+                              {i.status === "no_stock_info" && (
+                                <span className="inline-flex rounded-full border border-border/50 bg-secondary px-2.5 py-0.5 text-xs font-medium text-muted-foreground">Bling sem saldo</span>
+                              )}
+                              {state === "diverge" && (
+                                <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                                  {willLeave ? "Diferente · sai da loja" : "Diferente"}
+                                </span>
+                              )}
+                              {state === "synced" && (
+                                <span className="inline-flex rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:text-green-300">
+                                  {i.blingStock === 0 ? "Igual · oculto na loja" : i.applied ? "Atualizado" : "Igual"}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-border/60">
+            <CardHeader className="border-b border-border/30 pb-4 mb-4">
+              <CardTitle className="text-lg">Histórico</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!runs || runs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma execução registrada ainda.</p>
+              ) : (
+                <ul className="divide-y divide-border/50">
+                  {runs.map((r) => (
+                    <li key={r.id} className="flex flex-col gap-1 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                          r.status === "error"
+                            ? "border-destructive/20 bg-destructive/10 text-destructive"
+                            : "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300"
+                        }`}>
+                          {r.mode === "check" ? "Conferência" : "Sincronização"}
+                        </span>
+                        <span className="text-muted-foreground">{new Date(r.startedAt).toLocaleString("pt-BR")}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground sm:text-right">
+                        {r.error && r.matched === null ? (
+                          <span className="text-destructive">{r.error}</span>
+                        ) : (
+                          <>
+                            {r.matched ?? 0} pareados · {r.changed ?? 0} {r.mode === "check" ? "diferentes" : "alterados"} · {r.notFound ?? 0} sem par
+                            {(r.blingOnly ?? 0) > 0 && ` · ${r.blingOnly} só na Bling`}
+                            {r.error && <span className="ml-2 text-destructive">— {r.error}</span>}
+                          </>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
+
 
 function TeamTab() {
   const { user } = useAuth();

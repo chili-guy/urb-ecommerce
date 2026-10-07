@@ -2,8 +2,9 @@
 // Credenciais (client id/secret) vêm de variáveis de ambiente (secrets do
 // projeto Supabase) — nunca ficam no código nem no frontend.
 
-export const BLING_TOKEN_URL = "https://www.bling.com.br/Api/v3/oauth/token";
-export const BLING_PRODUCTS_URL = "https://www.bling.com.br/Api/v3/produtos";
+// Endereços e cabeçalhos conferidos na documentação oficial (developer.bling.com.br/aplicativos).
+export const BLING_TOKEN_URL = "https://api.bling.com.br/Api/v3/oauth/token";
+export const BLING_PRODUCTS_URL = "https://api.bling.com.br/Api/v3/produtos";
 
 export type BlingTokenResponse = {
   access_token: string;
@@ -23,18 +24,17 @@ function basicAuthHeader(): string {
 }
 
 /** Troca o `code` do redirect OAuth por access_token + refresh_token. */
-export async function exchangeCodeForToken(code: string, redirectUri: string): Promise<BlingTokenResponse> {
+export async function exchangeCodeForToken(code: string): Promise<BlingTokenResponse> {
   const res = await fetch(BLING_TOKEN_URL, {
     method: "POST",
     headers: {
       Authorization: basicAuthHeader(),
       "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
+      Accept: "1.0",
     },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      redirect_uri: redirectUri,
     }),
   });
   if (!res.ok) {
@@ -50,7 +50,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<BlingTok
     headers: {
       Authorization: basicAuthHeader(),
       "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
+      Accept: "1.0",
     },
     body: new URLSearchParams({
       grant_type: "refresh_token",

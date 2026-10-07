@@ -1,24 +1,23 @@
-// Puxa o estoque atual da Bling e atualiza products.stock no Supabase,
-// casando pelo SKU (products.sku == codigo do produto na Bling).
+// Compara o estoque da Bling com o do site (casando por SKU) e, no modo
+// "sync", atualiza products.stock. No modo "check" (conferência) só calcula e
+// registra o resultado, sem alterar nenhum produto.
 //
-// Chamado pelo botão "Sincronizar agora" do admin (passa o JWT do usuário
-// logado) — verifica is_staff() antes de tocar em qualquer coisa.
-//
-// ATENÇÃO: o formato exato da resposta de /estoques/saldos (nomes de campo)
-// foi escrito com base na documentação pública da Bling v3, mas não foi
-// testado contra uma conta real ainda — primeira sincronização deve ser
-// conferida com cuidado (o campo `lastSyncError` do bling_connection mostra
-// o que falhou, se falhar).
+// Chamado pelo painel admin (passa o JWT do usuário logado) — verifica
+// is_staff() antes de tocar em qualquer coisa. Grava o resultado em
+// bling_stock_items / bling_sync_runs (migração 0009) pro painel mostrar.
 //
 // Deploy: supabase functions deploy bling-sync-stock
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { BLING_PRODUCTS_URL, refreshAccessToken } from "../_shared/bling.ts";
+import { diffStock, type BlingProductLite, type LocalProductLite } from "../_shared/stock-diff.ts";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+type Mode = "sync" | "check";
 
 type BlingConnection = {
   access_token: string | null;
@@ -26,9 +25,14 @@ type BlingConnection = {
   token_expires_at: string | null;
 };
 
-async function getValidAccessToken(
-  serviceClient: ReturnType<typeof createClient>,
-): Promise<string> {
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
+}
+
+async function getValidAccessToken(serviceClient: ReturnType<typeof createClient>): Promise<string> {
   const { data: conn, error } = await serviceClient
     .from("bling_connection")
     .select("access_token, refresh_token, token_expires_at")
@@ -56,20 +60,8 @@ async function getValidAccessToken(
   return refreshed.access_token;
 }
 
-type BlingProduto = {
-  id: number;
-  codigo?: string | null;
-  estoque?: { saldoVirtualTotal?: number } | null;
-};
-
-/** Isolado de propósito — é a parte a conferir contra uma resposta real da Bling. */
-function extractStock(produto: BlingProduto): number | null {
-  const saldo = produto.estoque?.saldoVirtualTotal;
-  return typeof saldo === "number" ? Math.max(0, Math.floor(saldo)) : null;
-}
-
-async function fetchAllBlingProducts(accessToken: string): Promise<BlingProduto[]> {
-  const all: BlingProduto[] = [];
+async function fetchAllBlingProducts(accessToken: string): Promise<BlingProductLite[]> {
+  const all: BlingProductLite[] = [];
   for (let pagina = 1; pagina <= 50; pagina++) {
     const url = new URL(BLING_PRODUCTS_URL);
     url.searchParams.set("pagina", String(pagina));
@@ -78,8 +70,8 @@ async function fetchAllBlingProducts(accessToken: string): Promise<BlingProduto[
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
     });
     if (!res.ok) throw new Error(`Bling /produtos falhou (${res.status}): ${await res.text()}`);
-    const json = await res.json();
-    const page: BlingProduto[] = json.data ?? [];
+    const body = await res.json();
+    const page: BlingProductLite[] = body.data ?? [];
     all.push(...page);
     if (page.length < 100) break;
   }
@@ -94,78 +86,106 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: authHeader } },
   });
   const { data: isStaff } = await callerClient.rpc("is_staff");
-  if (!isStaff) {
-    return new Response(JSON.stringify({ error: "forbidden" }), {
-      status: 403,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+  if (!isStaff) return json({ error: "forbidden" }, 403);
+
+  let mode: Mode = "sync";
+  try {
+    const body = await req.json();
+    if (body?.mode === "check") mode = "check";
+  } catch {
+    /* sem corpo = sincronizar */
   }
 
   const serviceClient = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-
-  let matched = 0;
-  let updated = 0;
-  let skippedNoStock = 0;
+  const { data: userData } = await callerClient.auth.getUser(authHeader.replace(/^Bearer\s+/i, ""));
+  const triggeredBy = userData.user?.id ?? null;
+  const startedAt = new Date().toISOString();
 
   try {
     const accessToken = await getValidAccessToken(serviceClient);
     const blingProducts = await fetchAllBlingProducts(accessToken);
 
-    const stockBySku = new Map<string, number>();
-    for (const p of blingProducts) {
-      if (!p.codigo) continue;
-      const stock = extractStock(p);
-      if (stock === null) {
-        skippedNoStock++;
-        continue;
-      }
-      stockBySku.set(p.codigo.trim(), stock);
-    }
-
     const { data: localProducts, error: localErr } = await serviceClient
       .from("products")
-      .select("id, sku")
-      .not("sku", "is", null);
+      .select("id, sku, stock");
     if (localErr) throw localErr;
 
-    for (const product of localProducts ?? []) {
-      const sku = (product.sku as string | null)?.trim();
-      if (!sku || !stockBySku.has(sku)) continue;
-      matched++;
-      const { error: updateErr } = await serviceClient
-        .from("products")
-        .update({ stock: stockBySku.get(sku) })
-        .eq("id", product.id);
-      if (!updateErr) updated++;
+    const diff = diffStock((localProducts ?? []) as LocalProductLite[], blingProducts, mode === "sync");
+
+    let updateFailures = 0;
+    for (const { id, stock } of diff.toUpdate) {
+      const { error } = await serviceClient.from("products").update({ stock }).eq("id", id);
+      if (error) {
+        updateFailures++;
+        console.error("[bling-sync-stock] falha ao atualizar produto", id, error);
+        const item = diff.items.find((i) => i.product_id === id);
+        if (item) {
+          item.applied = false;
+          item.site_stock = item.previous_stock;
+        }
+      }
     }
+
+    // Acompanhamento é melhor-esforço: se a migração 0009 ainda não rodou, a
+    // sincronização em si continua valendo.
+    const checkedAt = new Date().toISOString();
+    const { error: itemsErr } = await serviceClient
+      .from("bling_stock_items")
+      .upsert(diff.items.map((i) => ({ ...i, checked_at: checkedAt })), { onConflict: "product_id" });
+    if (itemsErr) console.error("[bling-sync-stock] bling_stock_items", itemsErr);
+
+    const { error: runErr } = await serviceClient.from("bling_sync_runs").insert({
+      started_at: startedAt,
+      mode,
+      status: updateFailures > 0 ? "error" : "ok",
+      products_total: diff.summary.productsTotal,
+      matched: diff.summary.matched,
+      changed: diff.summary.changed,
+      not_found: diff.summary.unmatched,
+      bling_only: diff.summary.blingOnly,
+      zeroed: diff.summary.zeroed,
+      error: updateFailures > 0 ? `${updateFailures} produto(s) não puderam ser atualizados` : null,
+      triggered_by: triggeredBy,
+    });
+    if (runErr) console.error("[bling-sync-stock] bling_sync_runs", runErr);
 
     await serviceClient
       .from("bling_connection")
       .update({
-        last_synced_at: new Date().toISOString(),
-        last_sync_status: "ok",
-        last_sync_error: null,
-        updated_at: new Date().toISOString(),
+        last_synced_at: checkedAt,
+        last_sync_status: updateFailures > 0 ? "error" : "ok",
+        last_sync_error: updateFailures > 0 ? `${updateFailures} produto(s) não puderam ser atualizados` : null,
+        updated_at: checkedAt,
       })
       .eq("id", 1);
 
-    return new Response(
-      JSON.stringify({ ok: true, blingProducts: blingProducts.length, matched, updated, skippedNoStock }),
-      { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } },
-    );
+    return json({
+      ok: true,
+      mode,
+      blingProducts: blingProducts.length,
+      ...diff.summary,
+      updated: diff.toUpdate.length - updateFailures,
+      updateFailures,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown_error";
+    console.error("[bling-sync-stock]", err);
+
+    await serviceClient.from("bling_sync_runs").insert({
+      started_at: startedAt,
+      mode,
+      status: "error",
+      error: message,
+      triggered_by: triggeredBy,
+    });
     await serviceClient
       .from("bling_connection")
       .update({ last_synced_at: new Date().toISOString(), last_sync_status: "error", last_sync_error: message })
       .eq("id", 1);
-    console.error("[bling-sync-stock]", err);
-    return new Response(JSON.stringify({ ok: false, error: message }), {
-      status: message === "not_connected" ? 400 : 500,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+
+    return json({ ok: false, mode, error: message }, message === "not_connected" ? 400 : 500);
   }
 });

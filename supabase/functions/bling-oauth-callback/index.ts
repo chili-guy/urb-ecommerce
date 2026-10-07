@@ -33,8 +33,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const redirectUri = `${url.origin}${url.pathname}`;
-    const token = await exchangeCodeForToken(code, redirectUri);
+    const token = await exchangeCodeForToken(code);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,

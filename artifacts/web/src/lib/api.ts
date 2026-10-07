@@ -878,26 +878,146 @@ export function useBlingDisconnect() {
   });
 }
 
+/** "sync" grava o estoque da Bling no site; "check" só confere e mostra as diferenças. */
+export type BlingSyncMode = "sync" | "check";
+
 export type BlingSyncResult = {
   ok: boolean;
+  mode?: BlingSyncMode;
   blingProducts?: number;
+  productsTotal?: number;
   matched?: number;
+  changed?: number;
+  unmatched?: number;
+  blingOnly?: number;
+  zeroed?: number;
   updated?: number;
-  skippedNoStock?: number;
+  updateFailures?: number;
   error?: string;
 };
 
 export function useSyncBlingStock() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (): Promise<BlingSyncResult> => {
-      const { data, error } = await supabase.functions.invoke("bling-sync-stock", { method: "POST" });
-      if (error) throw error;
+    mutationFn: async (mode: BlingSyncMode): Promise<BlingSyncResult> => {
+      const { data, error } = await supabase.functions.invoke("bling-sync-stock", {
+        method: "POST",
+        body: { mode },
+      });
+      if (error) {
+        // Resposta não-2xx: a mensagem útil vem no corpo da resposta da função.
+        let message = error.message;
+        try {
+          const body = await (error as { context?: Response }).context?.json();
+          if (body?.error) message = body.error === "not_connected" ? "Bling não conectada." : String(body.error);
+        } catch {
+          /* corpo ilegível: fica a mensagem genérica */
+        }
+        throw new Error(message);
+      }
       return data as BlingSyncResult;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bling-status"] });
+      qc.invalidateQueries({ queryKey: ["bling-stock-items"] });
+      qc.invalidateQueries({ queryKey: ["bling-sync-runs"] });
       qc.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+}
+
+export type BlingStockStatus = "ok" | "not_found" | "no_sku" | "no_stock_info";
+
+export type BlingStockItem = {
+  productId: number;
+  name: string;
+  imageUrl: string | null;
+  sku: string | null;
+  status: BlingStockStatus;
+  blingStock: number | null;
+  siteStock: number | null;
+  previousStock: number | null;
+  applied: boolean;
+  checkedAt: string;
+};
+
+export type BlingSyncRun = {
+  id: number;
+  startedAt: string;
+  mode: BlingSyncMode;
+  status: "ok" | "error";
+  productsTotal: number | null;
+  matched: number | null;
+  changed: number | null;
+  notFound: number | null;
+  blingOnly: number | null;
+  zeroed: number | null;
+  error: string | null;
+};
+
+// Tabelas da migração 0009 — sem ela o painel só mostra o estado vazio.
+const isMissingRelation = (code?: string) => code === "42P01" || code === "PGRST205";
+
+export function useBlingStockItems(enabled = true) {
+  return useQuery({
+    queryKey: ["bling-stock-items"],
+    enabled,
+    queryFn: async (): Promise<BlingStockItem[]> => {
+      const { data, error } = await supabase
+        .from("bling_stock_items")
+        .select("*, products(name, image_url)")
+        .order("product_id", { ascending: true });
+      if (error) {
+        if (isMissingRelation(error.code)) return [];
+        throw error;
+      }
+      return (data ?? []).map((r: Row) => {
+        const product = (r.products ?? {}) as Row;
+        return {
+          productId: r.product_id as number,
+          name: (product.name as string) ?? `Produto #${r.product_id}`,
+          imageUrl: (product.image_url as string) ?? null,
+          sku: (r.sku as string) ?? null,
+          status: r.status as BlingStockStatus,
+          blingStock: r.bling_stock === null ? null : Number(r.bling_stock),
+          siteStock: r.site_stock === null ? null : Number(r.site_stock),
+          previousStock: r.previous_stock === null ? null : Number(r.previous_stock),
+          applied: Boolean(r.applied),
+          checkedAt: r.checked_at as string,
+        };
+      });
+    },
+  });
+}
+
+export function useBlingSyncRuns(enabled = true) {
+  return useQuery({
+    queryKey: ["bling-sync-runs"],
+    enabled,
+    queryFn: async (): Promise<BlingSyncRun[]> => {
+      const { data, error } = await supabase
+        .from("bling_sync_runs")
+        .select("*")
+        .order("started_at", { ascending: false })
+        .limit(8);
+      if (error) {
+        if (isMissingRelation(error.code)) return [];
+        throw error;
+      }
+      const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+      return (data ?? []).map((r: Row) => ({
+        id: r.id as number,
+        startedAt: r.started_at as string,
+        mode: r.mode as BlingSyncMode,
+        status: r.status as "ok" | "error",
+        productsTotal: num(r.products_total),
+        matched: num(r.matched),
+        changed: num(r.changed),
+        notFound: num(r.not_found),
+        blingOnly: num(r.bling_only),
+        zeroed: num(r.zeroed),
+        error: (r.error as string) ?? null,
+      }));
     },
   });
 }
@@ -910,15 +1030,13 @@ export function useSyncBlingStock() {
  */
 export function getBlingConnectUrl(): string | null {
   const clientId = import.meta.env.VITE_BLING_CLIENT_ID as string | undefined;
-  const projectUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-  if (!clientId || !projectUrl) return null;
+  if (!clientId) return null;
 
-  const redirectUri = `${projectUrl}/functions/v1/bling-oauth-callback`;
+  // O redirect é o "link de redirecionamento" cadastrado no app da Bling.
   const url = new URL("https://www.bling.com.br/Api/v3/oauth/authorize");
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("state", crypto.randomUUID());
-  url.searchParams.set("redirect_uri", redirectUri);
   return url.toString();
 }
 

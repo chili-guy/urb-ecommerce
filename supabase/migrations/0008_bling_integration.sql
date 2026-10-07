@@ -64,3 +64,7 @@ end;
 $$;
 
 grant execute on function public.bling_disconnect() to authenticated;
+
+-- Defesa em profundidade: além da RLS sem policies, tira o acesso direto à
+-- tabela de tokens (a service_role das Edge Functions continua com acesso).
+revoke all on public.bling_connection from anon, authenticated;
