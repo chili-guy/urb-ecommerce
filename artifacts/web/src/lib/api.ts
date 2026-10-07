@@ -834,6 +834,93 @@ export function useDeleteBanner() {
   });
 }
 
+// ------------------------------------------------------------------- bling ---
+export type BlingStatus = {
+  connected: boolean;
+  connectedAt: string | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: string | null;
+  lastSyncError: string | null;
+};
+
+const EMPTY_BLING_STATUS: BlingStatus = {
+  connected: false,
+  connectedAt: null,
+  lastSyncedAt: null,
+  lastSyncStatus: null,
+  lastSyncError: null,
+};
+
+export function useBlingStatus() {
+  return useQuery({
+    queryKey: ["bling-status"],
+    queryFn: async (): Promise<BlingStatus> => {
+      const { data, error } = await supabase.rpc("bling_connection_status");
+      if (error) {
+        // Migração 0008 ainda não rodou — trata como "nunca conectado".
+        if (error.code === "42883" || error.code === "PGRST202") return EMPTY_BLING_STATUS;
+        throw error;
+      }
+      return data as BlingStatus;
+    },
+  });
+}
+
+export function useBlingDisconnect() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc("bling_disconnect");
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["bling-status"] }),
+  });
+}
+
+export type BlingSyncResult = {
+  ok: boolean;
+  blingProducts?: number;
+  matched?: number;
+  updated?: number;
+  skippedNoStock?: number;
+  error?: string;
+};
+
+export function useSyncBlingStock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<BlingSyncResult> => {
+      const { data, error } = await supabase.functions.invoke("bling-sync-stock", { method: "POST" });
+      if (error) throw error;
+      return data as BlingSyncResult;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bling-status"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+    },
+  });
+}
+
+/**
+ * Monta a URL de autorização OAuth da Bling, ou null se o Client ID público
+ * ainda não foi configurado (`VITE_BLING_CLIENT_ID`). O Client ID não é
+ * segredo — quem é secreto é o Client Secret, que mora só no servidor
+ * (secret da Edge Function bling-oauth-callback).
+ */
+export function getBlingConnectUrl(): string | null {
+  const clientId = import.meta.env.VITE_BLING_CLIENT_ID as string | undefined;
+  const projectUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  if (!clientId || !projectUrl) return null;
+
+  const redirectUri = `${projectUrl}/functions/v1/bling-oauth-callback`;
+  const url = new URL("https://www.bling.com.br/Api/v3/oauth/authorize");
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("state", crypto.randomUUID());
+  url.searchParams.set("redirect_uri", redirectUri);
+  return url.toString();
+}
+
 // ------------------------------------------------------------------ equipe ---
 export type TeamMember = {
   userId: string;

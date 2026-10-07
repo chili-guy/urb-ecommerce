@@ -1,9 +1,11 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect } from "wouter";
 import {
   useAdminCustomers,
   useAdminOrders,
   useBanners,
+  useBlingDisconnect,
+  useBlingStatus,
   useCategories,
   useCoupons,
   useCreateBanner,
@@ -16,11 +18,13 @@ import {
   useGrantRole,
   useProducts,
   useRevokeRole,
+  useSyncBlingStock,
   useTeam,
   useUpdateBanner,
   useUpdateCoupon,
   useUpdateOrderStatus,
   useUpdateProduct,
+  getBlingConnectUrl,
 } from "@/lib/api";
 import { uploadProductImage, uploadSiteMedia } from "@/lib/storage";
 import { useAuth } from "@/lib/auth-context";
@@ -85,6 +89,9 @@ import {
   ArrowDown,
   Activity,
   Link2,
+  Plug,
+  RefreshCw,
+  Unplug,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -169,12 +176,25 @@ type AdminTab =
   | "banners"
   | "customers"
   | "reports"
+  | "integracoes"
   | "team";
 
 function AdminDashboard({ admin }: { admin: Admin }) {
   const { signOut } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [moreOpen, setMoreOpen] = useState(false);
+
+  // Volta do redirect OAuth da Bling (?bling=connected|error) — abre direto
+  // na aba de integrações e mostra o resultado, depois limpa a URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const bling = params.get("bling");
+    if (!bling) return;
+    setActiveTab("integracoes");
+    if (bling === "connected") toast.success("Bling conectado com sucesso");
+    else toast.error(`Falha ao conectar com a Bling${params.get("bling_msg") ? `: ${params.get("bling_msg")}` : ""}`);
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
 
   const handleLogout = async () => {
     await signOut();
@@ -236,6 +256,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           <NavItem icon={ImageIcon} label="Banners" active={activeTab === "banners"} onClick={() => setActiveTab("banners")} />
           <NavItem icon={Contact} label="Clientes" active={activeTab === "customers"} onClick={() => setActiveTab("customers")} />
           <NavItem icon={BarChart3} label="Relatórios" active={activeTab === "reports"} onClick={() => setActiveTab("reports")} />
+          <NavItem icon={Plug} label="Integrações" active={activeTab === "integracoes"} onClick={() => setActiveTab("integracoes")} />
           <div className="pt-4 pb-2">
             <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-4">
               Administração
@@ -271,7 +292,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           <SheetTrigger asChild>
             <button
               className={`p-3 rounded-lg ${
-                ["coupons", "banners", "customers", "reports", "team"].includes(activeTab) ? "bg-primary/10 text-primary" : ""
+                ["coupons", "banners", "customers", "reports", "integracoes", "team"].includes(activeTab) ? "bg-primary/10 text-primary" : ""
               }`}
             >
               <MoreHorizontal className="h-5 w-5" />
@@ -291,6 +312,9 @@ function AdminDashboard({ admin }: { admin: Admin }) {
               </button>
               <button onClick={() => { setActiveTab("reports"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "reports" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
                 <BarChart3 className="h-4 w-4" /> Relatórios
+              </button>
+              <button onClick={() => { setActiveTab("integracoes"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "integracoes" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
+                <Plug className="h-4 w-4" /> Integrações
               </button>
               {admin.isAdmin && (
                 <button onClick={() => { setActiveTab("team"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "team" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
@@ -315,6 +339,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           {activeTab === "banners" && <BannersTab />}
           {activeTab === "customers" && <CustomersTab />}
           {activeTab === "reports" && <ReportsTab />}
+          {activeTab === "integracoes" && <IntegrationsTab />}
           {activeTab === "team" && admin.isAdmin && <TeamTab />}
         </div>
       </main>
@@ -1875,6 +1900,111 @@ function ReportsTab() {
           </Card>
         </>
       )}
+    </div>
+  );
+}
+
+function IntegrationsTab() {
+  const { data: bling, isLoading } = useBlingStatus();
+  const disconnect = useBlingDisconnect();
+  const sync = useSyncBlingStock();
+  const connectUrl = getBlingConnectUrl();
+
+  const handleSync = () => {
+    sync.mutate(undefined, {
+      onSuccess: (result) => {
+        if (result.ok) {
+          toast.success(`Estoque sincronizado: ${result.updated ?? 0} produto(s) atualizado(s)`);
+        } else {
+          toast.error(result.error ?? "Falha ao sincronizar");
+        }
+      },
+      onError: () => toast.error("Falha ao sincronizar com a Bling"),
+    });
+  };
+
+  const handleDisconnect = () => {
+    if (!confirm("Desconectar da Bling? A sincronização de estoque para de funcionar até reconectar.")) return;
+    disconnect.mutate(undefined, {
+      onSuccess: () => toast.success("Bling desconectada"),
+      onError: () => toast.error("Falha ao desconectar"),
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-display font-bold text-foreground">Integrações</h2>
+        <p className="text-sm text-muted-foreground mt-1">Conexões com sistemas externos.</p>
+      </div>
+
+      <Card className="shadow-sm border-border/60 max-w-xl">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-border/30 pb-4 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-lg bg-secondary/60">
+              <Plug className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Bling</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Sincronização de estoque por SKU</p>
+            </div>
+          </div>
+          {!isLoading && (
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${
+              bling?.connected
+                ? "bg-green-500/10 text-green-700 border-green-500/30 dark:text-green-300"
+                : "bg-secondary text-muted-foreground border-border/50"
+            }`}>
+              {bling?.connected ? "Conectado" : "Desconectado"}
+            </span>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <div className="h-16 animate-pulse rounded-lg bg-secondary" />
+          ) : bling?.connected ? (
+            <>
+              <div className="space-y-1 text-sm text-muted-foreground">
+                {bling.connectedAt && (
+                  <p>Conectado em {new Date(bling.connectedAt).toLocaleString("pt-BR")}</p>
+                )}
+                <p>
+                  Última sincronização:{" "}
+                  {bling.lastSyncedAt ? new Date(bling.lastSyncedAt).toLocaleString("pt-BR") : "ainda não rodou"}
+                  {bling.lastSyncStatus === "error" && (
+                    <span className="ml-2 text-destructive">— falhou: {bling.lastSyncError}</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={handleSync} disabled={sync.isPending} className="jurb-cta">
+                  <RefreshCw className={`h-4 w-4 mr-2 ${sync.isPending ? "animate-spin" : ""}`} />
+                  Sincronizar agora
+                </Button>
+                <Button variant="outline" onClick={handleDisconnect} disabled={disconnect.isPending}>
+                  <Unplug className="h-4 w-4 mr-2" /> Desconectar
+                </Button>
+              </div>
+            </>
+          ) : connectUrl ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Conecte sua conta Bling pra manter o estoque do site sincronizado automaticamente.
+              </p>
+              <Button asChild className="jurb-cta">
+                <a href={connectUrl}>
+                  <Plug className="h-4 w-4 mr-2" /> Conectar com Bling
+                </a>
+              </Button>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              A integração ainda não foi configurada neste ambiente (falta a credencial pública da
+              Bling). Isso é feito pelo desenvolvedor, não aqui no painel.
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

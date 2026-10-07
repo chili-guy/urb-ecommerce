@@ -55,3 +55,6 @@ Thumbs.db
 
 # Claude Code (config/scaffolding local)
 .claude/
+
+# Supabase CLI local cache
+supabase/.temp/
