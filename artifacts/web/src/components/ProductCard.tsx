@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { Link } from "wouter";
 import { formatCurrency } from "@/lib/utils";
 import { PRODUCT_CONDITION_LABELS, type Product } from "@/lib/types";
@@ -18,14 +18,14 @@ export function ProductCard({ product }: { product: Product }) {
   const gallery = [transparentImageUrl, ...product.images];
   const activeSrc = activeImage === 0 ? transparentImageUrl : gallery[activeImage];
 
-  // Passar o mouse sobre a foto alterna entre as imagens (estilo Mercado Livre).
-  const handleGalleryHover = (event: MouseEvent<HTMLDivElement>) => {
+  // Carrossel automático: troca de foto a cada 5s, sem depender do mouse.
+  useEffect(() => {
     if (gallery.length <= 1) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientX - rect.left) / rect.width;
-    const index = Math.min(gallery.length - 1, Math.max(0, Math.floor(ratio * gallery.length)));
-    setActiveImage(index);
-  };
+    const id = setInterval(() => {
+      setActiveImage((i) => (i + 1) % gallery.length);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [gallery.length]);
 
   const hasDiscount =
     product.compareAtPrice !== null &&
@@ -60,11 +60,7 @@ export function ProductCard({ product }: { product: Product }) {
           </span>
         )}
 
-        <div
-          className="relative flex h-[150px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-2 sm:h-[250px] sm:rounded-xl sm:px-4 sm:pt-4"
-          onMouseMove={handleGalleryHover}
-          onMouseLeave={() => setActiveImage(0)}
-        >
+        <div className="relative flex h-[150px] shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-2 sm:h-[250px] sm:rounded-xl sm:px-4 sm:pt-4">
           <img
             key={activeImage}
             src={activeSrc}
