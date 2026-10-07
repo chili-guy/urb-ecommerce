@@ -287,6 +287,12 @@ export default function ProductDetail() {
     setZoomActive(false);
   };
 
+  // Ao entrar num produto (de qualquer página), a rolagem deve começar do
+  // topo — sem isso o SPA mantém a posição de scroll da página anterior.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
+
   // Guarda no navegador do cliente pra alimentar "Vistos recentemente" na home.
   useEffect(() => {
     if (product) recordProductView(product.id);
