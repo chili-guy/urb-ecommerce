@@ -479,7 +479,13 @@ export default function ProductDetail() {
               ({product.reviewCount} avaliações)
             </span>
             <span className="text-muted-foreground text-sm flex items-center gap-1">
-              <Check className="h-4 w-4 text-green-500" /> Em estoque
+              {product.stock > 0 ? (
+                <>
+                  <Check className="h-4 w-4 text-green-500" /> Em estoque
+                </>
+              ) : (
+                <span className="font-medium text-destructive">Esgotado</span>
+              )}
             </span>
           </div>
 
@@ -540,7 +546,7 @@ export default function ProductDetail() {
                   +
                 </button>
               </div>
-              <Button size="lg" className="flex-1 text-base h-12 px-3 sm:px-6" onClick={handleAdd}>
+              <Button size="lg" className="flex-1 text-base h-12 px-3 sm:px-6" onClick={handleAdd} disabled={product.stock <= 0}>
                 <ShoppingCart className="mr-2 h-5 w-5 shrink-0" />
                 <span className="sm:hidden">Adicionar</span>
                 <span className="hidden sm:inline">Adicionar ao Carrinho</span>

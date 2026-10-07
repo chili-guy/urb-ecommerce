@@ -116,7 +116,8 @@ export type ProductQuery = {
   minPrice?: number;
   maxPrice?: number;
   minRating?: number;
-  inStock?: boolean;
+  /** Só o painel admin passa true — na loja, produto com estoque 0 não aparece. */
+  includeOutOfStock?: boolean;
   condition?: ProductCondition;
   /** Filtra por uma lista de ids (ex: histórico de "vistos recentemente"). */
   ids?: number[];
@@ -137,7 +138,7 @@ async function fetchProducts(params: ProductQuery): Promise<Product[]> {
   if (params.minPrice !== undefined) q = q.gte("price", params.minPrice);
   if (params.maxPrice !== undefined) q = q.lte("price", params.maxPrice);
   if (params.minRating !== undefined) q = q.gte("rating", params.minRating);
-  if (params.inStock) q = q.gt("stock", 0);
+  if (!params.includeOutOfStock) q = q.gt("stock", 0);
 
   switch (params.sort) {
     case "price-asc":

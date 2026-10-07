@@ -99,7 +99,6 @@ export default function Catalog() {
   const [priceMax, setPriceMax] = useState("");
   const [minRating, setMinRating] = useState(0);
   const [condition, setCondition] = useState<ProductCondition | "Todas">("Todas");
-  const [inStockOnly, setInStockOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Nova categoria pela URL (ex: clicou em outro link /categoria/:x) reresincroniza.
@@ -145,8 +144,7 @@ export default function Catalog() {
     (priceMin ? 1 : 0) +
     (priceMax ? 1 : 0) +
     (minRating > 0 ? 1 : 0) +
-    (condition !== "Todas" ? 1 : 0) +
-    (inStockOnly ? 1 : 0);
+    (condition !== "Todas" ? 1 : 0);
 
   const clearAdvancedFilters = () => {
     setSubcategory("Todas");
@@ -154,7 +152,6 @@ export default function Catalog() {
     setPriceMax("");
     setMinRating(0);
     setCondition("Todas");
-    setInStockOnly(false);
   };
 
   const filteredProducts = useMemo(() => {
@@ -166,9 +163,8 @@ export default function Catalog() {
     if (max !== undefined && !Number.isNaN(max)) list = list.filter((p) => p.price <= max);
     if (minRating > 0) list = list.filter((p) => p.rating >= minRating);
     if (condition !== "Todas") list = list.filter((p) => p.condition === condition);
-    if (inStockOnly) list = list.filter((p) => p.stock > 0);
     return rankBySearch(list, search, sort);
-  }, [products, subcategory, priceMin, priceMax, minRating, condition, inStockOnly, sort, search]);
+  }, [products, subcategory, priceMin, priceMax, minRating, condition, sort, search]);
 
   const searchField = (
     <div className="relative">
@@ -266,18 +262,6 @@ export default function Catalog() {
     </div>
   );
 
-  const stockFilter = (
-    <label className="flex items-center gap-2.5 text-sm">
-      <input
-        type="checkbox"
-        checked={inStockOnly}
-        onChange={(e) => setInStockOnly(e.target.checked)}
-        className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
-      />
-      Somente em estoque
-    </label>
-  );
-
   const subcategoryFilter = subcategories.length > 0 && (
     <div className="space-y-2">
       <h3 className="font-display font-semibold">Subcategoria</h3>
@@ -360,7 +344,6 @@ export default function Catalog() {
                 {priceFilter}
                 {ratingFilter}
                 {conditionFilter}
-                {stockFilter}
               </div>
               <div className="flex gap-3 border-t pt-4">
                 <Button variant="outline" className="flex-1" onClick={clearAdvancedFilters}>
@@ -423,7 +406,6 @@ export default function Catalog() {
             {priceFilter}
             {ratingFilter}
             {conditionFilter}
-            {stockFilter}
             {activeFilterCount > 0 && (
               <button
                 onClick={clearAdvancedFilters}

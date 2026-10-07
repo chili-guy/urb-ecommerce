@@ -92,6 +92,7 @@ import {
   Plug,
   RefreshCw,
   Unplug,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -549,7 +550,7 @@ function DashboardTab() {
 }
 
 function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
-  const { data: products, isLoading } = useProducts();
+  const { data: products, isLoading } = useProducts({ includeOutOfStock: true });
   const { data: knownCategories } = useCategories();
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
@@ -563,6 +564,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [cloneSource, setCloneSource] = useState<Product | null>(null);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -644,27 +646,33 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
     );
   }, [products, searchTerm]);
 
-  const openModal = (product?: Product) => {
+  // `clone`: abre o formulário pré-preenchido como um produto NOVO. Os campos que
+  // identificam um anúncio (SKU, estoque, variação, destaque) vêm vazios pra não
+  // duplicar nada sem querer — estoque é obrigatório, então não passa em branco.
+  const openModal = (product?: Product, opts: { clone?: boolean } = {}) => {
     if (product) {
-      setEditingProduct(product);
-      setName(product.name);
+      const clone = opts.clone ?? false;
+      setEditingProduct(clone ? null : product);
+      setCloneSource(clone ? product : null);
+      setName(clone ? `${product.name} (cópia)` : product.name);
       setDescription(product.description);
       setCategory(product.category);
       setCondition(product.condition);
       setPrice(product.price.toString());
       setComparePrice(product.compareAtPrice?.toString() || "");
-      setStock(product.stock.toString());
+      setStock(clone ? "" : product.stock.toString());
       setImageUrl(product.imageUrl);
       setImages([...product.images]);
-      setSku(product.sku ?? "");
+      setSku(clone ? "" : product.sku ?? "");
       setSubcategory(product.subcategory ?? "");
-      setVariantGroup(product.variantGroup ?? "");
-      setVariantLabel(product.variantLabel ?? "");
+      setVariantGroup(clone ? "" : product.variantGroup ?? "");
+      setVariantLabel(clone ? "" : product.variantLabel ?? "");
       setVideoUrl(product.videoUrl ?? "");
-      setFeatured(product.featured);
+      setFeatured(clone ? false : product.featured);
       setSpecs(product.specs.map((s) => ({ ...s })));
     } else {
       setEditingProduct(null);
+      setCloneSource(null);
       setName("");
       setDescription("");
       setCategory(CATEGORIES[0]);
@@ -688,6 +696,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingProduct(null);
+    setCloneSource(null);
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -807,6 +816,11 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                                 {PRODUCT_CONDITION_LABELS[product.condition]}
                               </span>
                             )}
+                            {product.stock <= 0 && (
+                              <span className="inline-block text-[10px] bg-destructive/10 text-destructive border border-destructive/20 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                                Oculto na loja
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -820,8 +834,11 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="outline" size="icon" className="h-8 w-8 text-foreground hover:text-primary hover:border-primary/50" onClick={() => openModal(product)}>
+                        <Button variant="outline" size="icon" className="h-8 w-8 text-foreground hover:text-primary hover:border-primary/50" onClick={() => openModal(product)} title="Editar">
                           <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="outline" size="icon" className="h-8 w-8 text-foreground hover:text-primary hover:border-primary/50" onClick={() => openModal(product, { clone: true })} title="Clonar produto">
+                          <Copy className="h-3.5 w-3.5" />
                         </Button>
                         {isAdmin && (
                           <Button variant="outline" size="icon" className="h-8 w-8 text-foreground hover:bg-destructive hover:text-destructive-foreground hover:border-destructive" onClick={() => handleDelete(product.id)}>
@@ -842,12 +859,20 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
           <div className="bg-card border border-border shadow-2xl rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center p-6 border-b border-border/50 shrink-0">
-              <h2 className="text-xl font-display font-bold text-foreground">{editingProduct ? "Editar Produto" : "Novo Produto"}</h2>
+              <h2 className="text-xl font-display font-bold text-foreground">
+                {editingProduct ? "Editar Produto" : cloneSource ? "Clonar Produto" : "Novo Produto"}
+              </h2>
               <button onClick={closeModal} className="text-muted-foreground hover:text-foreground transition-colors bg-secondary/50 p-2 rounded-full hover:bg-secondary">
                 <X className="h-4 w-4" />
               </button>
             </div>
             <div className="overflow-y-auto flex-1 p-6">
+              {cloneSource && (
+                <p className="mb-6 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground">
+                  Dados copiados de <strong>{cloneSource.name}</strong>. SKU, estoque, variação e destaque
+                  ficaram em branco — ajuste o que muda (nome, fotos, bateria, etc.) e salve.
+                </p>
+              )}
               <form id="product-form" onSubmit={handleSave} className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-foreground">Nome do Produto</label>

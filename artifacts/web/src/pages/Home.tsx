@@ -20,10 +20,13 @@ function discountPct(p: Product): number {
   return Math.round(((p.compareAtPrice - p.price) / p.compareAtPrice) * 100);
 }
 
+// Cada seção da home mostra até 8 produtos: 4 colunas x 2 linhas no desktop.
+const PRODUCTS_PER_SECTION = 8;
+
 function ProductGridSkeleton() {
   return (
     <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
-      {[1, 2, 3, 4].map((i) => (
+      {Array.from({ length: PRODUCTS_PER_SECTION }, (_, i) => (
         <div key={i} className="flex h-[400px] animate-pulse flex-col rounded-xl border border-[#e4dfd7] bg-white p-3 sm:h-[560px] sm:rounded-2xl sm:p-4">
           <div className="mb-4 h-[150px] w-full rounded-lg bg-[#eee9e1] sm:h-[250px]" />
           <div className="mb-3 h-4 w-20 rounded bg-[#e8f5ec]" />
@@ -71,7 +74,7 @@ function ProductSection({
           <ProductGridSkeleton />
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4">
-            {products!.slice(0, 4).map((product) => (
+            {products!.slice(0, PRODUCTS_PER_SECTION).map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
           </div>
@@ -153,15 +156,15 @@ function BannerCarousel() {
 }
 
 export default function Home() {
-  const { data: featuredProducts, isLoading } = useProducts({ featured: true, limit: 4 });
-  const { data: newestProducts, isLoading: isLoadingNewest } = useProducts({ sort: "newest", limit: 4 });
+  const { data: featuredProducts, isLoading } = useProducts({ featured: true, limit: PRODUCTS_PER_SECTION });
+  const { data: newestProducts, isLoading: isLoadingNewest } = useProducts({ sort: "newest", limit: PRODUCTS_PER_SECTION });
   const { data: allProducts, isLoading: isLoadingDeals } = useProducts();
 
   const topDeals = useMemo(() => {
     return (allProducts ?? [])
       .filter((p) => p.compareAtPrice && p.compareAtPrice > p.price)
       .sort((a, b) => discountPct(b) - discountPct(a))
-      .slice(0, 4);
+      .slice(0, PRODUCTS_PER_SECTION);
   }, [allProducts]);
 
   const recentIds = useMemo(() => getRecentlyViewed(), []);
