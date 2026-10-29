@@ -9,13 +9,13 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { recordProductView } from "@/lib/recently-viewed";
 import { formatCurrency, youtubeEmbedUrl } from "@/lib/utils";
-import { getShippingOptions } from "@/lib/shipping";
+import { useShippingQuote } from "@/lib/shipping";
 import { useCart } from "@/lib/cart-context";
 import { trackAddToCart, trackViewItem } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { PRODUCT_CONDITION_LABELS, type ShippingOption } from "@/lib/types";
+import { PRODUCT_CONDITION_LABELS } from "@/lib/types";
 import {
   ShoppingCart,
   ArrowLeft,
@@ -29,20 +29,23 @@ import {
   ChevronLeft,
   ChevronRight,
   ZoomIn,
+  Loader2,
 } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-function ShippingEstimator({ productId }: { productId: number }) {
+function ShippingEstimator({ productId, quantity }: { productId: number; quantity: number }) {
   const [cep, setCep] = useState("");
-  const [options, setOptions] = useState<ShippingOption[] | null>(null);
+  const [submittedCep, setSubmittedCep] = useState<string | null>(null);
+  const items = useMemo(() => [{ productId, quantity }], [productId, quantity]);
+  const quote = useShippingQuote(submittedCep, items);
 
   const handleCalculate = () => {
-    if (cep.replace(/\D/g, "").length < 8) {
+    if (cep.replace(/D/g, "").length < 8) {
       toast.error("CEP inválido");
       return;
     }
-    setOptions(getShippingOptions(1, cep));
+    setSubmittedCep(cep);
   };
 
   return (
@@ -54,32 +57,35 @@ function ShippingEstimator({ productId }: { productId: number }) {
         <Input
           value={cep}
           onChange={(e) => setCep(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleCalculate()}
           placeholder="00000-000"
           inputMode="numeric"
           maxLength={9}
           className="h-10 bg-background"
         />
-        <Button variant="secondary" className="shrink-0" onClick={handleCalculate}>
-          Calcular
+        <Button variant="secondary" className="shrink-0" onClick={handleCalculate} disabled={quote.isFetching}>
+          {quote.isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Calcular"}
         </Button>
       </div>
-      {options && (
+      {quote.isError && !quote.isFetching && (
+        <p className="mt-3 text-sm text-destructive">
+          {quote.error instanceof Error ? quote.error.message : "Não foi possível calcular o frete."}
+        </p>
+      )}
+      {quote.data && !quote.isFetching && (
         <ul className="mt-3 space-y-1.5 text-sm">
-          {options.map((o) => (
-            <li key={o.id} className="flex justify-between">
+          {quote.data.options.map((o) => (
+            <li key={o.id} className="flex justify-between gap-3">
               <span className="text-muted-foreground">
-                {o.carrier} · {o.service} ({o.deliveryDays} dias úteis)
+                {o.carrier} · {o.service}
+                {o.deliveryDays > 0 ? ` (${o.deliveryDays} dias úteis)` : ""}
               </span>
-              <span className="font-mono font-medium">
-                {o.price === 0 ? "Grátis" : formatCurrency(o.price)}
-              </span>
+              <span className="shrink-0 font-mono font-medium">{o.price === 0 ? "Grátis" : formatCurrency(o.price)}</span>
             </li>
           ))}
         </ul>
       )}
-      <p className="mt-2 text-[11px] text-muted-foreground" data-product={productId}>
-        Estimativa. O valor final é confirmado no checkout.
-      </p>
+      <p className="mt-2 text-[11px] text-muted-foreground">O valor final é confirmado no checkout.</p>
     </div>
   );
 }
@@ -530,7 +536,7 @@ export default function ProductDetail() {
           )}
 
           <div className="mb-8">
-            <ShippingEstimator productId={product.id} />
+            <ShippingEstimator productId={product.id} quantity={quantity} />
           </div>
 
           <div className="mt-auto space-y-6 pt-8 border-t">

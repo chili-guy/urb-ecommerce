@@ -2,7 +2,7 @@ import { useState, type MouseEvent } from "react";
 import { Link } from "wouter";
 import { formatCurrency } from "@/lib/utils";
 import { PRODUCT_CONDITION_LABELS, type Product } from "@/lib/types";
-import { Rocket, ShoppingCart, Star } from "lucide-react";
+import { ShoppingCart, Star } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { trackAddToCart } from "@/lib/analytics";
 
@@ -114,12 +114,7 @@ export function ProductCard({ product }: { product: Product }) {
         </div>
 
         <div className="mt-1 flex flex-1 flex-col px-0.5 sm:px-1">
-          <div className="mb-2 flex w-fit items-center gap-1 rounded bg-[#e8f5ec] px-1.5 py-0.5 text-[10px] font-bold text-[#267b4e] sm:mb-3 sm:gap-1.5 sm:rounded-md sm:px-2 sm:py-1 sm:text-[11px]">
-            <Rocket className="h-3 w-3" />
-            Frete grátis
-          </div>
-
-          <h3 className="line-clamp-2 text-[13px] font-medium leading-snug text-[#242424] sm:min-h-[63px] sm:line-clamp-3 sm:text-[15px] sm:leading-[1.38]">
+          <h3 className="mt-1 line-clamp-2 text-[13px] font-medium leading-snug text-[#242424] sm:min-h-[63px] sm:line-clamp-3 sm:text-[15px] sm:leading-[1.38]">
             {product.name}
           </h3>
 

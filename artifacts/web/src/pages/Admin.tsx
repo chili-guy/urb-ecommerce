@@ -36,11 +36,15 @@ import {
   ORDER_STATUSES,
   PRODUCT_CONDITIONS,
   PRODUCT_CONDITION_LABELS,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_STATUS_LABELS,
   type Banner,
   type BannerInput,
   type Coupon,
   type CouponInput,
+  type Order,
   type OrderStatus,
+  type PaymentStatus,
   type Product,
   type ProductCondition,
   type ProductInput,
@@ -48,6 +52,8 @@ import {
   type Role,
 } from "@/lib/types";
 import { formatCurrency, normalizeSearch } from "@/lib/utils";
+import { formatCep } from "@/lib/cep";
+import { formatCpfCnpj, formatPhone } from "@/lib/br-docs";
 import { BlingImportPanel } from "@/components/BlingImportPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,12 +130,40 @@ const CATEGORIES = [
 ];
 
 const STATUS_STYLES: Record<string, string> = {
+  "Aguardando pagamento": "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   "Pedido confirmado": "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
   "Em separação": "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   Enviado: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
   Entregue: "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300",
   Cancelado: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
 };
+
+const PAYMENT_STYLES: Record<PaymentStatus, string> = {
+  pending: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  paid: "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300",
+  failed: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+  expired: "border-border/60 bg-secondary text-muted-foreground",
+  refunded: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+};
+
+function PaymentBadge({ order }: { order: Order }) {
+  if (!order.paymentStatus) {
+    return <span className="text-xs text-muted-foreground">Pedido antigo (sem pagamento online)</span>;
+  }
+  return (
+    <div className="space-y-1">
+      <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${PAYMENT_STYLES[order.paymentStatus]}`}>
+        {PAYMENT_STATUS_LABELS[order.paymentStatus]}
+      </span>
+      {order.paymentMethod && (
+        <div className="text-xs text-muted-foreground">
+          {PAYMENT_METHOD_LABELS[order.paymentMethod]}
+          {order.paymentMethod === "credit_card" && order.installments && order.installments > 1 ? ` · ${order.installments}x` : ""}
+        </div>
+      )}
+    </div>
+  );
+}
 
 type Admin = { name: string; email: string | null; isAdmin: boolean };
 
@@ -587,6 +621,10 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
   const [videoUrl, setVideoUrl] = useState("");
   const [featured, setFeatured] = useState(false);
   const [specs, setSpecs] = useState<ProductSpec[]>([]);
+  const [weightG, setWeightG] = useState("");
+  const [widthCm, setWidthCm] = useState("");
+  const [heightCm, setHeightCm] = useState("");
+  const [lengthCm, setLengthCm] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -642,6 +680,14 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       return next;
     });
 
+  const noPackageCount = useMemo(
+    () =>
+      (products ?? []).filter(
+        (p) => p.stock > 0 && (p.weightG === null || p.widthCm === null || p.heightCm === null || p.lengthCm === null),
+      ).length,
+    [products],
+  );
+
   const filteredProducts = useMemo(() => {
     if (!products) return [];
     if (!searchTerm) return products;
@@ -675,6 +721,10 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       setVideoUrl(product.videoUrl ?? "");
       setFeatured(clone ? false : product.featured);
       setSpecs(product.specs.map((s) => ({ ...s })));
+      setWeightG(product.weightG?.toString() ?? "");
+      setWidthCm(product.widthCm?.toString() ?? "");
+      setHeightCm(product.heightCm?.toString() ?? "");
+      setLengthCm(product.lengthCm?.toString() ?? "");
     } else {
       setEditingProduct(null);
       setCloneSource(null);
@@ -694,6 +744,10 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       setVideoUrl("");
       setFeatured(false);
       setSpecs([]);
+      setWeightG("");
+      setWidthCm("");
+      setHeightCm("");
+      setLengthCm("");
     }
     setIsModalOpen(true);
   };
@@ -706,6 +760,11 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    const pkg = [weightG, widthCm, heightCm, lengthCm].map((v) => (v.trim() ? Number(v.replace(",", ".")) : null));
+    if (pkg.some((v) => v !== null && (!Number.isFinite(v) || v <= 0))) {
+      toast.error("Peso e medidas precisam ser números maiores que zero (ou ficar em branco).");
+      return;
+    }
     const data: ProductInput = {
       name,
       description,
@@ -725,6 +784,10 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
       specs: specs
         .map((s) => ({ label: s.label.trim(), value: s.value.trim() }))
         .filter((s) => s.label !== "" && s.value !== ""),
+      weightG: pkg[0] === null ? null : Math.round(pkg[0]),
+      widthCm: pkg[1],
+      heightCm: pkg[2],
+      lengthCm: pkg[3],
     };
 
     if (editingProduct) {
@@ -769,6 +832,17 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
           <Plus className="h-4 w-4 mr-2" /> Novo Produto
         </Button>
       </div>
+
+      {noPackageCount > 0 && (
+        <p className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <strong>{noPackageCount}</strong> produto(s) ainda sem peso/medidas da embalagem. O frete deles é calculado com
+            uma embalagem padrão e pode não bater com o custo real da transportadora. Edite o produto e preencha
+            "Embalagem para o frete" (produtos importados da Bling já vêm com isso quando a Bling tem os dados).
+          </span>
+        </p>
+      )}
 
       <div className="flex items-center gap-4 bg-card p-2 rounded-lg border shadow-sm">
         <div className="relative flex-1">
@@ -1052,6 +1126,32 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
                   </div>
                 </div>
 
+                <div className="space-y-2 rounded-lg border border-border/60 p-4">
+                  <label className="text-sm font-semibold text-foreground">Embalagem para o frete <span className="font-normal text-muted-foreground">(recomendado)</span></label>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Peso (g)</span>
+                      <Input type="number" min="1" step="1" inputMode="numeric" value={weightG} onChange={(e) => setWeightG(e.target.value)} placeholder="500" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Largura (cm)</span>
+                      <Input type="number" min="0.1" step="0.1" inputMode="decimal" value={widthCm} onChange={(e) => setWidthCm(e.target.value)} placeholder="20" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Altura (cm)</span>
+                      <Input type="number" min="0.1" step="0.1" inputMode="decimal" value={heightCm} onChange={(e) => setHeightCm(e.target.value)} placeholder="10" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Comprimento (cm)</span>
+                      <Input type="number" min="0.1" step="0.1" inputMode="decimal" value={lengthCm} onChange={(e) => setLengthCm(e.target.value)} placeholder="20" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Medidas da caixa já embalada. É com isso que o frete é calculado na transportadora. Em branco, o site usa uma
+                    embalagem padrão (500 g, 20 × 10 × 20 cm) e o frete pode sair diferente do real.
+                  </p>
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-sm font-semibold text-foreground">Vídeo do YouTube <span className="font-normal text-muted-foreground">(Opcional)</span></label>
                   <Input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=..." />
@@ -1123,6 +1223,8 @@ function OrdersTab() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
   const [savingId, setSavingId] = useState<number | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const detail = useMemo(() => orders?.find((o) => o.id === detailId) ?? null, [orders, detailId]);
 
   const handleStatusChange = (id: number, status: OrderStatus) => {
     setSavingId(id);
@@ -1185,29 +1287,41 @@ function OrdersTab() {
                 <th className="px-6 py-4">ID</th>
                 <th className="px-6 py-4">Cliente</th>
                 <th className="px-6 py-4">Data</th>
+                <th className="px-6 py-4">Pagamento</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-right">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {isLoading ? (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">Carregando pedidos...</td></tr>
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">Carregando pedidos...</td></tr>
               ) : filteredOrders.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">Nenhum pedido encontrado.</td></tr>
+                <tr><td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">Nenhum pedido encontrado.</td></tr>
               ) : (
                 filteredOrders.map((order) => (
                   <tr key={order.id} className="hover:bg-secondary/10 transition-colors">
-                    <td className="px-6 py-4 font-mono font-bold text-primary">#{order.id.toString().padStart(4, "0")}</td>
+                    <td className="px-6 py-4">
+                      <button
+                        type="button"
+                        onClick={() => setDetailId(order.id)}
+                        title="Ver detalhes do pedido"
+                        className="font-mono font-bold text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      >
+                        #{order.id.toString().padStart(4, "0")}
+                      </button>
+                    </td>
                     <td className="px-6 py-4">
                       <div className="font-semibold text-foreground">{order.customerName}</div>
                       <div className="text-xs text-muted-foreground mt-0.5">{order.customerEmail}</div>
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">{new Date(order.createdAt).toLocaleDateString("pt-BR")}</td>
+                    <td className="px-6 py-4"><PaymentBadge order={order} /></td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <select
                           value={order.status}
-                          disabled={savingId === order.id}
+                          disabled={savingId === order.id || order.paymentStatus === "pending"}
+                          title={order.paymentStatus === "pending" ? "O status muda sozinho quando o pagamento for confirmado" : undefined}
                           onChange={(e) => handleStatusChange(order.id, e.target.value as OrderStatus)}
                           className={`rounded-full border px-3 py-1 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60 ${STATUS_STYLES[order.status] ?? "border-border/60 bg-secondary text-foreground"}`}
                         >
@@ -1224,6 +1338,97 @@ function OrdersTab() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {detail && <OrderDetailModal order={detail} onClose={() => setDetailId(null)} />}
+    </div>
+  );
+}
+
+function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => void }) {
+  const addr = order.shippingAddress;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Pedido ${order.id}`}
+        className="bg-card border border-border shadow-2xl rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center p-6 border-b border-border/50 shrink-0">
+          <h2 className="text-xl font-display font-bold text-foreground">Pedido #{order.id.toString().padStart(4, "0")}</h2>
+          <button onClick={onClose} aria-label="Fechar" className="text-muted-foreground hover:text-foreground transition-colors bg-secondary/50 p-2 rounded-full hover:bg-secondary">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-6 space-y-6 text-sm">
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cliente</p>
+              <p className="font-semibold text-foreground">{order.customerName}</p>
+              <p className="text-muted-foreground break-all">{order.customerEmail}</p>
+              {order.customerPhone && <p className="text-muted-foreground">{formatPhone(order.customerPhone)}</p>}
+              {order.customerCpf && <p className="text-muted-foreground">CPF/CNPJ {formatCpfCnpj(order.customerCpf)}</p>}
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Entrega</p>
+              {addr ? (
+                <p className="text-muted-foreground">
+                  {addr.street}, {addr.number}
+                  {addr.complement ? ` — ${addr.complement}` : ""}
+                  <br />
+                  {addr.district} · {addr.city}/{addr.state}
+                  <br />
+                  CEP {formatCep(addr.postalCode)}
+                </p>
+              ) : (
+                <p className="text-muted-foreground">Endereço não registrado (pedido antigo).</p>
+              )}
+              <p className="text-muted-foreground">
+                {order.shippingOption.carrier} — {order.shippingOption.service}
+                {order.shippingOption.deliveryDays > 0 ? ` · ${order.shippingOption.deliveryDays} dias úteis` : ""}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Pagamento</p>
+            <PaymentBadge order={order} />
+            {order.paidAt && <p className="text-muted-foreground">Pago em {new Date(order.paidAt).toLocaleString("pt-BR")}</p>}
+            {order.paymentStatus === "pending" && order.paymentExpiresAt && (
+              <p className="text-muted-foreground">Reserva do estoque até {new Date(order.paymentExpiresAt).toLocaleString("pt-BR")}</p>
+            )}
+            {order.paymentNote && (
+              <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {order.paymentNote}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Itens</p>
+            <div className="divide-y divide-border/50 rounded-lg border border-border/60">
+              {order.items.map((it, i) => (
+                <div key={i} className="flex justify-between gap-4 px-4 py-3">
+                  <span>{it.quantity}x {it.productName}</span>
+                  <span className="shrink-0 font-mono">{formatCurrency(it.total)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1 pt-2">
+              <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span className="font-mono">{formatCurrency(order.subtotal)}</span></div>
+              {order.discount > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Desconto{order.couponCode ? ` (${order.couponCode})` : ""}</span>
+                  <span className="font-mono">-{formatCurrency(order.discount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-muted-foreground"><span>Frete</span><span className="font-mono">{formatCurrency(order.shipping)}</span></div>
+              <div className="flex justify-between border-t border-border/50 pt-2 text-base font-bold text-foreground"><span>Total</span><span className="font-mono">{formatCurrency(order.total)}</span></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

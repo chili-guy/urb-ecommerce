@@ -21,6 +21,8 @@ export type BlingDetail = BlingListItem & {
   descricaoComplementar?: string | null;
   condicao?: number; // 0 não especificado | 1 novo | 2 usado
   marca?: string | null;
+  pesoBruto?: number | null; // kg
+  dimensoes?: { largura?: number; altura?: number; profundidade?: number; unidadeMedida?: number } | null; // 0 m | 1 cm | 2 mm
   categoria?: { id?: number } | null;
   midia?: {
     video?: { url?: string | null } | null;
@@ -45,7 +47,10 @@ export type ProductInsert = {
   video_url: string | null;
   specs: { label: string; value: string }[];
   featured: false;
-};
+} & Partial<PackageFields>;
+
+/** Embalagem pro cálculo de frete (colunas da migração 0010). Só vão quando a Bling tem os dados. */
+export type PackageFields = { weight_g: number; width_cm: number; height_cm: number; length_cm: number };
 
 export const NO_PHOTO_URL = "https://placehold.co/800x800/e2e8f0/1e293b?text=Sem+foto";
 export const MAX_IMAGES = 4;
@@ -96,6 +101,30 @@ export function collectImageUrls(detail: BlingDetail): string[] {
   return [...new Set(urls)];
 }
 
+const UNIT_TO_CM: Record<number, number> = { 0: 100, 1: 1, 2: 0.1 };
+
+/** Peso (kg -> g) e medidas (m/cm/mm -> cm). Vazio se faltar qualquer medida: melhor sem dado do que errado. */
+export function extractPackage(detail: BlingDetail): Partial<PackageFields> {
+  const out: Partial<PackageFields> = {};
+  const kg = Number(detail.pesoBruto);
+  if (Number.isFinite(kg) && kg > 0) out.weight_g = Math.max(1, Math.round(kg * 1000));
+
+  const d = detail.dimensoes;
+  const factor = UNIT_TO_CM[Number(d?.unidadeMedida ?? 1)];
+  if (d && factor) {
+    const w = Number(d.largura) * factor;
+    const h = Number(d.altura) * factor;
+    const l = Number(d.profundidade) * factor;
+    if ([w, h, l].every((v) => Number.isFinite(v) && v > 0)) {
+      const r1 = (v: number) => Math.round(v * 10) / 10;
+      out.width_cm = r1(w);
+      out.height_cm = r1(h);
+      out.length_cm = r1(l);
+    }
+  }
+  return out;
+}
+
 export function mapCondition(condicao: number | undefined): "novo" | "usado" {
   return condicao === 2 ? "usado" : "novo";
 }
@@ -129,5 +158,6 @@ export function buildProductRow(
     video_url: detail.midia?.video?.url?.trim() || null,
     specs: brand ? [{ label: "Marca", value: brand }] : [],
     featured: false,
+    ...extractPackage(detail),
   };
 }

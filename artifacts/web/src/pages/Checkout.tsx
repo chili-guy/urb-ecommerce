@@ -1,18 +1,31 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useCart } from "@/lib/cart-context";
 import { useAuth } from "@/lib/auth-context";
-import { useAddresses, useProfile, previewCoupon } from "@/lib/api";
+import { useAddresses, useCheckoutPay, useProfile, previewCoupon } from "@/lib/api";
+import { FunctionHttpError } from "@/lib/functions";
 import { formatCurrency } from "@/lib/utils";
-import { formatCep } from "@/lib/cep";
-import { useCreateOrder } from "@/lib/api";
-import { getShippingOptions } from "@/lib/shipping";
-import { trackBeginCheckout, trackPurchase } from "@/lib/analytics";
-import type { Address, CouponPreview, ShippingOption } from "@/lib/types";
+import { formatCep, lookupCep, normalizeCep } from "@/lib/cep";
+import { useShippingQuote } from "@/lib/shipping";
+import {
+  formatCardExpiry,
+  formatCardNumber,
+  formatCpfCnpj,
+  formatPhone,
+  isValidCardNumber,
+  isValidCpfCnpj,
+  isValidEmail,
+  isValidPhone,
+  onlyDigits,
+} from "@/lib/br-docs";
+import { trackBeginCheckout } from "@/lib/analytics";
+import type { Address, CouponPreview, PaymentMethod } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ShieldCheck, CheckCircle2, MapPin, Tag, X } from "lucide-react";
+import { CreditCard, Loader2, Lock, MapPin, QrCode, Tag, X } from "lucide-react";
 import { toast } from "sonner";
+
+const MIN_INSTALLMENT = 5; // o Asaas não aceita parcela abaixo de R$ 5,00
 
 function shortAddress(a: Address): string {
   return [
@@ -24,23 +37,78 @@ function shortAddress(a: Address): string {
     .join(" · ");
 }
 
+function StepTitle({ n, children }: { n: number; children: React.ReactNode }) {
+  return (
+    <h3 className="mb-3 flex items-center gap-2 font-display text-lg font-bold sm:mb-4 sm:text-xl">
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">{n}</span>
+      {children}
+    </h3>
+  );
+}
+
+function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`space-y-2 ${className}`}>
+      <label className="text-sm font-medium">{label}</label>
+      {children}
+    </div>
+  );
+}
+
 export default function Checkout() {
   const { items, subtotal, clearCart } = useCart();
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { data: profile } = useProfile(!!user);
   const { data: addresses } = useAddresses(!!user);
+  const checkoutPay = useCheckoutPay();
 
-  const [postalCode, setPostalCode] = useState("");
+  // identificação
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [cpf, setCpf] = useState("");
+  const [phone, setPhone] = useState("");
+
+  // endereço
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
-  const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
-  const [selectedShipping, setSelectedShipping] = useState<string>("");
-  const [orderComplete, setOrderComplete] = useState<number | null>(null);
+  const [cep, setCep] = useState("");
+  const [street, setStreet] = useState("");
+  const [number, setNumber] = useState("");
+  const [complement, setComplement] = useState("");
+  const [district, setDistrict] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [cepLoading, setCepLoading] = useState(false);
+
+  // pagamento
+  const [method, setMethod] = useState<PaymentMethod>("pix");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardName, setCardName] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvv, setCardCvv] = useState("");
+  const [installments, setInstallments] = useState(1);
+
+  // cupom
   const [couponCode, setCouponCode] = useState("");
   const [couponResult, setCouponResult] = useState<CouponPreview | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
+
+  // Uma chave por tentativa: reenvio/clique duplo cai no mesmo pedido em vez de cobrar 2x.
+  const attemptKey = useRef(crypto.randomUUID());
+
+  const quoteItems = useMemo(
+    () => items.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
+    [items],
+  );
+  const quote = useShippingQuote(cep, quoteItems);
+  const shippingOptions = quote.data?.options ?? [];
+  const [selectedShipping, setSelectedShipping] = useState("");
+
+  // Seleciona a opção mais barata sozinho; se a escolhida sumir numa nova cotação, volta pra ela.
+  useEffect(() => {
+    if (shippingOptions.length === 0) return;
+    setSelectedShipping((cur) => (shippingOptions.some((o) => o.id === cur) ? cur : shippingOptions[0].id));
+  }, [shippingOptions]);
 
   // Dispara o evento de início de checkout uma vez, quando a página abre com itens.
   const checkoutTracked = useRef(false);
@@ -54,53 +122,54 @@ export default function Checkout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Pré-preenche com os dados do cliente logado (podem chegar após a montagem).
+  // Pré-preenche com os dados da conta (podem chegar depois da montagem).
   useEffect(() => {
-    if (user) {
-      setName((v) => v || user.name);
-      setEmail((v) => v || user.email || "");
-    }
+    if (!user) return;
+    setName((v) => v || user.name);
+    setEmail((v) => v || user.email || "");
   }, [user]);
   useEffect(() => {
-    if (profile) setPostalCode((v) => v || profile.postalCode || "");
+    if (!profile) return;
+    setPhone((v) => v || (profile.phone ? formatPhone(profile.phone) : ""));
+    setCep((v) => v || (profile.postalCode ? formatCep(profile.postalCode) : ""));
   }, [profile]);
 
-  const createOrder = useCreateOrder();
-
-  const calcShipping = (cep: string) => {
-    if (cep.replace(/\D/g, "").length < 8) return;
-    const count = items.reduce((n, i) => n + i.quantity, 0);
-    const options = getShippingOptions(count, cep);
-    setShippingOptions(options);
-    setSelectedShipping((cur) => cur || options[0]?.id || "");
-  };
-
-  const handleCalculateShipping = () => {
-    if (postalCode.replace(/\D/g, "").length < 8) {
-      toast.error("CEP inválido");
-      return;
-    }
-    calcShipping(postalCode);
-  };
+  // CEP completo preenche rua, bairro, cidade e UF (só o que ainda está vazio).
+  const lastLookedUp = useRef("");
+  useEffect(() => {
+    const digits = normalizeCep(cep);
+    if (digits.length !== 8 || digits === lastLookedUp.current) return;
+    lastLookedUp.current = digits;
+    setCepLoading(true);
+    lookupCep(digits).then((found) => {
+      setCepLoading(false);
+      if (!found) return;
+      setStreet((v) => v || found.street);
+      setDistrict((v) => v || found.district);
+      setCity((v) => v || found.city);
+      setState((v) => v || found.state);
+    });
+  }, [cep]);
 
   const selectSavedAddress = (a: Address) => {
     setSelectedAddressId(a.id);
-    setPostalCode(formatCep(a.postalCode));
+    lastLookedUp.current = normalizeCep(a.postalCode); // já temos os dados: não precisa consultar de novo
+    setCep(formatCep(a.postalCode));
+    setStreet(a.street);
+    setNumber(a.number);
+    setComplement(a.complement ?? "");
+    setDistrict(a.district);
+    setCity(a.city);
+    setState(a.state);
     if (a.recipient) setName((v) => v || a.recipient);
-    calcShipping(a.postalCode);
   };
 
-  // Seleciona o endereço padrão automaticamente na primeira carga.
+  // Seleciona o endereço padrão na primeira carga.
   const addressPrefilled = useRef(false);
   useEffect(() => {
-    if (addressPrefilled.current) return;
-    if (!addresses || addresses.length === 0) return;
+    if (addressPrefilled.current || !addresses || addresses.length === 0) return;
     addressPrefilled.current = true;
-    const def = addresses.find((a) => a.isDefault) ?? addresses[0];
-    setSelectedAddressId(def.id);
-    setPostalCode((v) => v || formatCep(def.postalCode));
-    setName((v) => v || def.recipient || "");
-    calcShipping(def.postalCode);
+    selectSavedAddress(addresses.find((a) => a.isDefault) ?? addresses[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addresses]);
 
@@ -120,61 +189,90 @@ export default function Checkout() {
   };
 
   const discount = couponResult?.valid ? couponResult.discount : 0;
+  const selectedOption = shippingOptions.find((o) => o.id === selectedShipping);
+  const total = Math.max(subtotal + (selectedOption?.price ?? 0) - discount, 0);
+
+  const installmentOptions = useMemo(() => {
+    const max = Math.max(1, Math.min(12, Math.floor(total / MIN_INSTALLMENT)));
+    return Array.from({ length: max }, (_, i) => i + 1);
+  }, [total]);
+  useEffect(() => {
+    setInstallments((n) => Math.min(n, installmentOptions.length));
+  }, [installmentOptions]);
+
+  /** Primeira coisa errada no formulário, ou null se está tudo certo. */
+  const firstProblem = (): string | null => {
+    if (name.trim().split(/\s+/).length < 2) return "Informe nome e sobrenome.";
+    if (!isValidEmail(email)) return "E-mail inválido.";
+    if (!isValidCpfCnpj(cpf)) return "CPF ou CNPJ inválido.";
+    if (!isValidPhone(phone)) return "Telefone inválido. Use DDD + número.";
+    if (normalizeCep(cep).length !== 8) return "CEP inválido.";
+    if (!street.trim() || !number.trim() || !district.trim() || !city.trim() || state.trim().length !== 2) {
+      return "Complete o endereço de entrega (rua, número, bairro, cidade e UF).";
+    }
+    if (!selectedOption) return "Escolha uma opção de frete.";
+    if (method === "credit_card") {
+      if (!isValidCardNumber(cardNumber)) return "Número do cartão inválido.";
+      if (cardName.trim().length < 3) return "Informe o nome impresso no cartão.";
+      const [mm, yy] = cardExpiry.split("/");
+      const month = Number(mm);
+      const year = Number(yy) + 2000;
+      const now = new Date();
+      if (!mm || !yy || yy.length !== 2 || month < 1 || month > 12) return "Validade do cartão inválida (MM/AA).";
+      if (year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth() + 1)) return "Cartão vencido.";
+      if (onlyDigits(cardCvv).length < 3) return "Código de segurança (CVV) inválido.";
+    }
+    return null;
+  };
 
   const handleCheckout = () => {
-    const option = shippingOptions.find((o) => o.id === selectedShipping);
-    if (!name || !email || !option) {
-      toast.error("Preencha todos os campos e selecione o frete.");
+    if (checkoutPay.isPending) return;
+    const problem = firstProblem();
+    if (problem || !selectedOption) {
+      toast.error(problem ?? "Escolha uma opção de frete.");
       return;
     }
+    const [mm, yy] = cardExpiry.split("/");
 
-    createOrder.mutate(
+    checkoutPay.mutate(
       {
-        customerName: name,
-        customerEmail: email,
-        postalCode,
-        shippingOption: option,
-        items: items.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
-        couponCode: couponResult?.valid ? couponResult.code : undefined,
+        items: quoteItems,
+        shippingServiceId: selectedOption.id,
+        customer: { name: name.trim(), email: email.trim(), cpfCnpj: onlyDigits(cpf), phone: onlyDigits(phone) },
+        address: {
+          postalCode: normalizeCep(cep),
+          street: street.trim(),
+          number: number.trim(),
+          complement: complement.trim(),
+          district: district.trim(),
+          city: city.trim(),
+          state: state.trim().toUpperCase(),
+        },
+        couponCode: couponResult?.valid ? couponResult.code : null,
+        paymentMethod: method,
+        installments: method === "credit_card" ? installments : 1,
+        card:
+          method === "credit_card"
+            ? { holderName: cardName.trim(), number: onlyDigits(cardNumber), expiryMonth: mm, expiryYear: yy, ccv: onlyDigits(cardCvv) }
+            : undefined,
+        idempotencyKey: attemptKey.current,
       },
       {
-        onSuccess: (order) => {
-          setOrderComplete(order.id);
-          trackPurchase(
-            order.id,
-            order.total,
-            items.map((i) => ({ id: i.product.id, name: i.product.name, price: i.product.price, quantity: i.quantity })),
-          );
+        onSuccess: (result) => {
           clearCart();
+          if (result.unconfirmed) {
+            toast.info("Não conseguimos confirmar o pagamento ainda. Acompanhe pelo pedido: se for aprovado, ele é atualizado sozinho.");
+          }
+          setLocation(`/pedido/${result.orderId}`);
         },
         onError: (error) => {
-          toast.error(
-            error instanceof Error ? error.message : "Erro ao processar pedido.",
-          );
+          // O servidor respondeu "não": nada ficou pendente, então a próxima tentativa é uma compra nova.
+          if (error instanceof FunctionHttpError) attemptKey.current = crypto.randomUUID();
+          toast.error(error instanceof Error ? error.message : "Erro ao processar o pagamento.");
         },
       },
     );
   };
-
-  if (orderComplete) {
-    return (
-      <div className="container mx-auto px-4 py-24 text-center max-w-lg">
-        <div className="bg-green-100 text-green-600 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
-          <CheckCircle2 className="h-12 w-12" />
-        </div>
-        <h1 className="font-display text-3xl font-bold mb-4">Pedido Confirmado!</h1>
-        <p className="text-muted-foreground mb-2">
-          Obrigado por comprar na UR3. Seu pedido #{orderComplete} foi recebido.
-        </p>
-        <p className="text-muted-foreground mb-8">
-          Enviamos um email de confirmação para {email}.
-        </p>
-        <Button asChild size="lg" className="w-full">
-          <Link href="/conta">Acompanhar Pedido</Link>
-        </Button>
-      </div>
-    );
-  }
 
   if (items.length === 0) {
     return (
@@ -187,8 +285,37 @@ export default function Checkout() {
     );
   }
 
-  const selectedOption = shippingOptions.find(o => o.id === selectedShipping);
-  const total = Math.max(subtotal + (selectedOption?.price || 0) - discount, 0);
+  if (authLoading) {
+    return (
+      <div className="container mx-auto flex justify-center px-4 py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="container mx-auto max-w-lg px-4 py-20 text-center">
+        <Lock className="mx-auto mb-4 h-10 w-10 text-primary" />
+        <h1 className="mb-2 font-display text-2xl font-bold">Entre para finalizar a compra</h1>
+        <p className="mb-6 text-muted-foreground">
+          Com a sua conta você acompanha o pedido, o pagamento e a entrega. Seu carrinho fica guardado.
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <Button asChild size="lg">
+            <Link href="/entrar?next=/checkout">Entrar</Link>
+          </Button>
+          <Button asChild size="lg" variant="outline">
+            <Link href="/cadastrar">Criar conta</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const cpfDigits = onlyDigits(cpf);
+  const cpfInvalid = cpfDigits.length >= 11 && !isValidCpfCnpj(cpf);
+  const payLabel = method === "pix" ? `Pagar ${formatCurrency(total)} com Pix` : `Pagar ${formatCurrency(total)}`;
 
   return (
     <div className="container mx-auto px-4 pb-28 pt-6 sm:pt-8 lg:pb-12">
@@ -196,31 +323,42 @@ export default function Checkout() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-12">
         <div className="space-y-6 sm:space-y-8 lg:col-span-7">
-
           <section>
-            <h3 className="mb-3 flex items-center gap-2 font-display text-lg font-bold sm:mb-4 sm:text-xl">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">1</span>
-              Identificação
-            </h3>
+            <StepTitle n={1}>Identificação</StepTitle>
             <div className="grid grid-cols-1 gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 sm:p-6">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Nome Completo</label>
-                <Input value={name} onChange={e => setName(e.target.value)} placeholder="João Silva" />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">E-mail</label>
-                <Input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="joao@exemplo.com" />
-              </div>
+              <Field label="Nome completo" className="sm:col-span-2">
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="João Silva" autoComplete="name" />
+              </Field>
+              <Field label="E-mail">
+                <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="joao@exemplo.com" autoComplete="email" />
+              </Field>
+              <Field label="Celular / telefone">
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(formatPhone(e.target.value))}
+                  placeholder="(11) 99999-8888"
+                  inputMode="tel"
+                  autoComplete="tel-national"
+                />
+              </Field>
+              <Field label="CPF ou CNPJ" className="sm:col-span-2">
+                <Input
+                  value={cpf}
+                  onChange={(e) => setCpf(formatCpfCnpj(e.target.value))}
+                  placeholder="000.000.000-00"
+                  inputMode="numeric"
+                  aria-invalid={cpfInvalid}
+                  className={cpfInvalid ? "border-destructive focus-visible:ring-destructive" : ""}
+                />
+                {cpfInvalid && <p className="text-xs text-destructive">CPF ou CNPJ inválido.</p>}
+              </Field>
             </div>
           </section>
 
           <section>
-            <h3 className="mb-3 flex items-center gap-2 font-display text-lg font-bold sm:mb-4 sm:text-xl">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">2</span>
-              Entrega
-            </h3>
+            <StepTitle n={2}>Entrega</StepTitle>
             <div className="space-y-5 rounded-lg border bg-card p-4 sm:space-y-6 sm:p-6">
-              {user && addresses && addresses.length > 0 && (
+              {addresses && addresses.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Endereços salvos</p>
                   {addresses.map((a) => (
@@ -255,34 +393,68 @@ export default function Checkout() {
                       onChange={() => setSelectedAddressId(null)}
                       className="h-4 w-4 shrink-0 text-primary focus:ring-primary"
                     />
-                    Informar outro CEP
+                    Entregar em outro endereço
                   </label>
                 </div>
               )}
-              <div className="flex items-end gap-3">
-                <div className="flex-1 space-y-2">
-                  <label className="text-sm font-medium">CEP</label>
-                  <Input
-                    value={postalCode}
-                    onChange={e => { setPostalCode(e.target.value); setSelectedAddressId(null); }}
-                    placeholder="00000-000"
-                    inputMode="numeric"
-                    maxLength={9}
-                  />
-                </div>
-                <Button
-                  onClick={handleCalculateShipping}
-                  disabled={items.length === 0}
-                  variant="secondary"
-                >
-                  Calcular
-                </Button>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
+                <Field label="CEP" className="sm:col-span-2">
+                  <div className="relative">
+                    <Input
+                      value={cep}
+                      onChange={(e) => {
+                        setCep(formatCep(e.target.value));
+                        setSelectedAddressId(null);
+                      }}
+                      placeholder="00000-000"
+                      inputMode="numeric"
+                      maxLength={9}
+                      autoComplete="postal-code"
+                    />
+                    {cepLoading && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+                  </div>
+                </Field>
+                <Field label="Rua" className="sm:col-span-4">
+                  <Input value={street} onChange={(e) => { setStreet(e.target.value); setSelectedAddressId(null); }} autoComplete="address-line1" />
+                </Field>
+                <Field label="Número" className="sm:col-span-2">
+                  <Input value={number} onChange={(e) => { setNumber(e.target.value); setSelectedAddressId(null); }} placeholder="123 ou S/N" />
+                </Field>
+                <Field label="Complemento (opcional)" className="sm:col-span-4">
+                  <Input value={complement} onChange={(e) => setComplement(e.target.value)} placeholder="Apto, bloco, referência" autoComplete="address-line2" />
+                </Field>
+                <Field label="Bairro" className="sm:col-span-3">
+                  <Input value={district} onChange={(e) => setDistrict(e.target.value)} />
+                </Field>
+                <Field label="Cidade" className="sm:col-span-2">
+                  <Input value={city} onChange={(e) => setCity(e.target.value)} autoComplete="address-level2" />
+                </Field>
+                <Field label="UF" className="sm:col-span-1">
+                  <Input value={state} onChange={(e) => setState(e.target.value.toUpperCase().slice(0, 2))} maxLength={2} placeholder="SP" />
+                </Field>
               </div>
 
-              {shippingOptions.length > 0 && (
-                <div className="space-y-3 pt-4 border-t">
-                  <p className="text-sm font-medium mb-2">Opções de Frete</p>
-                  {shippingOptions.map(option => (
+              <div className="space-y-3 border-t pt-4">
+                <p className="mb-2 text-sm font-medium">Opções de frete</p>
+                {normalizeCep(cep).length !== 8 && (
+                  <p className="text-sm text-muted-foreground">Informe o CEP para ver as opções de frete.</p>
+                )}
+                {quote.isFetching && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Calculando o frete...
+                  </div>
+                )}
+                {quote.isError && !quote.isFetching && (
+                  <div className="space-y-2 text-sm">
+                    <p className="text-destructive">{quote.error instanceof Error ? quote.error.message : "Não foi possível calcular o frete."}</p>
+                    <Button variant="outline" size="sm" onClick={() => quote.refetch()}>
+                      Tentar de novo
+                    </Button>
+                  </div>
+                )}
+                {!quote.isFetching &&
+                  shippingOptions.map((option) => (
                     <label
                       key={option.id}
                       className={`flex cursor-pointer items-center gap-3 rounded-md border p-3 transition-colors sm:p-4 ${
@@ -299,32 +471,109 @@ export default function Checkout() {
                       />
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium">{option.carrier} — {option.service}</div>
-                        <div className="text-xs text-muted-foreground">{option.deliveryDays} dias úteis · {option.description}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {option.deliveryDays > 0 ? `${option.deliveryDays} dias úteis` : "Prazo a confirmar"} · {option.description}
+                        </div>
                       </div>
                       <div className="shrink-0 font-mono text-sm font-medium">
                         {option.price === 0 ? "Grátis" : formatCurrency(option.price)}
                       </div>
                     </label>
                   ))}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section>
-            <h3 className="mb-3 flex items-center gap-2 font-display text-lg font-bold sm:mb-4 sm:text-xl">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-sm text-primary-foreground">3</span>
-              Pagamento
-            </h3>
-            <div className="flex items-center gap-4 rounded-lg border bg-card p-4 text-muted-foreground sm:p-6">
-              <ShieldCheck className="h-7 w-7 shrink-0 text-primary sm:h-8 sm:w-8" />
-              <div>
-                <p className="font-medium text-foreground">Ambiente de teste</p>
-                <p className="text-sm">Nenhum pagamento real será processado.</p>
               </div>
             </div>
           </section>
 
+          <section>
+            <StepTitle n={3}>Pagamento</StepTitle>
+            <div className="space-y-4 rounded-lg border bg-card p-4 sm:p-6">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {(
+                  [
+                    { id: "pix", label: "Pix", hint: "Aprovação na hora", Icon: QrCode },
+                    { id: "credit_card", label: "Cartão de crédito", hint: "Em até 12x sem juros", Icon: CreditCard },
+                  ] as const
+                ).map(({ id, label, hint, Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setMethod(id)}
+                    className={`flex items-center gap-3 rounded-md border p-4 text-left transition-colors ${
+                      method === id ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:bg-secondary/50"
+                    }`}
+                  >
+                    <Icon className="h-6 w-6 shrink-0 text-primary" />
+                    <div>
+                      <div className="text-sm font-semibold">{label}</div>
+                      <div className="text-xs text-muted-foreground">{hint}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {method === "pix" ? (
+                <p className="text-sm text-muted-foreground">
+                  Depois de confirmar, mostramos o QR Code e o código "copia e cola". O pedido é confirmado assim que o
+                  pagamento cair, e o estoque fica reservado por 30 minutos.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field label="Número do cartão" className="sm:col-span-2">
+                      <Input
+                        value={cardNumber}
+                        onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
+                        placeholder="0000 0000 0000 0000"
+                        inputMode="numeric"
+                        autoComplete="cc-number"
+                      />
+                    </Field>
+                    <Field label="Nome impresso no cartão" className="sm:col-span-2">
+                      <Input value={cardName} onChange={(e) => setCardName(e.target.value.toUpperCase())} autoComplete="cc-name" />
+                    </Field>
+                    <Field label="Validade (MM/AA)">
+                      <Input
+                        value={cardExpiry}
+                        onChange={(e) => setCardExpiry(formatCardExpiry(e.target.value))}
+                        placeholder="05/30"
+                        inputMode="numeric"
+                        maxLength={5}
+                        autoComplete="cc-exp"
+                      />
+                    </Field>
+                    <Field label="CVV">
+                      <Input
+                        value={cardCvv}
+                        onChange={(e) => setCardCvv(onlyDigits(e.target.value).slice(0, 4))}
+                        placeholder="123"
+                        inputMode="numeric"
+                        maxLength={4}
+                        autoComplete="cc-csc"
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Parcelamento">
+                    <select
+                      value={installments}
+                      onChange={(e) => setInstallments(Number(e.target.value))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      {installmentOptions.map((n) => (
+                        <option key={n} value={n}>
+                          {n === 1 ? `À vista ${formatCurrency(total)}` : `${n}x de ${formatCurrency(total / n)} sem juros`}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    O titular do cartão deve ser quem compra (CPF informado acima). Os dados do cartão vão direto, com
+                    segurança, ao processador de pagamentos e não ficam salvos na loja.
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
 
         <div className="lg:col-span-5">
@@ -335,18 +584,16 @@ export default function Checkout() {
 
             <div className="space-y-5 p-4 sm:space-y-6 sm:p-6">
               <div className="max-h-[300px] space-y-4 overflow-y-auto pr-2">
-                {items.map(item => (
+                {items.map((item) => (
                   <div key={item.product.id} className="flex gap-4 text-sm">
-                    <div className="w-16 h-16 rounded border bg-white overflow-hidden shrink-0">
-                      <img src={item.product.imageUrl} className="w-full h-full object-contain p-1 mix-blend-multiply" alt=""/>
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded border bg-white">
+                      <img src={item.product.imageUrl} className="h-full w-full object-contain p-1 mix-blend-multiply" alt="" />
                     </div>
                     <div className="flex-1">
-                      <div className="font-medium line-clamp-2">{item.product.name}</div>
+                      <div className="line-clamp-2 font-medium">{item.product.name}</div>
                       <div className="text-muted-foreground">Qtd: {item.quantity}</div>
                     </div>
-                    <div className="font-mono font-medium">
-                      {formatCurrency(item.product.price * item.quantity)}
-                    </div>
+                    <div className="font-mono font-medium">{formatCurrency(item.product.price * item.quantity)}</div>
                   </div>
                 ))}
               </div>
@@ -377,7 +624,7 @@ export default function Checkout() {
                 )}
               </div>
 
-              <div className="space-y-3 pt-6 border-t text-sm">
+              <div className="space-y-3 border-t pt-6 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span className="font-mono">{formatCurrency(subtotal)}</span>
@@ -405,9 +652,15 @@ export default function Checkout() {
                 size="lg"
                 className="hidden h-12 w-full text-base lg:flex"
                 onClick={handleCheckout}
-                disabled={createOrder.isPending || !selectedShipping}
+                disabled={checkoutPay.isPending || !selectedOption}
               >
-                {createOrder.isPending ? "Processando..." : "Confirmar Pedido"}
+                {checkoutPay.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processando...
+                  </>
+                ) : (
+                  payLabel
+                )}
               </Button>
             </div>
           </div>
@@ -421,17 +674,18 @@ export default function Checkout() {
             <div className="text-[11px] text-muted-foreground">Total</div>
             <div className="font-mono text-lg font-bold text-primary">{formatCurrency(total)}</div>
           </div>
-          <Button
-            size="lg"
-            className="h-12 flex-1 text-base"
-            onClick={handleCheckout}
-            disabled={createOrder.isPending || !selectedShipping}
-          >
-            {createOrder.isPending
-              ? "Processando..."
-              : !selectedShipping
-                ? "Calcule o frete"
-                : "Confirmar Pedido"}
+          <Button size="lg" className="h-12 flex-1 text-base" onClick={handleCheckout} disabled={checkoutPay.isPending || !selectedOption}>
+            {checkoutPay.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processando...
+              </>
+            ) : !selectedOption ? (
+              "Informe o CEP"
+            ) : method === "pix" ? (
+              "Pagar com Pix"
+            ) : (
+              "Pagar"
+            )}
           </Button>
         </div>
       </div>

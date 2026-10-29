@@ -1,40 +1,36 @@
+import { useQuery } from "@tanstack/react-query";
+import { invokeFunction } from "./functions";
 import type { ShippingOption } from "./types";
 
-/**
- * Cotação de frete simulada (mesma regra que rodava no servidor Express).
- * Substituir por Melhor Envio quando o cliente conectar a conta.
- */
-export function getShippingOptions(
-  itemCount: number,
-  postalCode: string,
-): ShippingOption[] {
-  const regionFactor = postalCode.replace(/\D/g, "").startsWith("0") ? 1.15 : 1;
-  const standard = Number(((12.9 + itemCount * 3.4) * regionFactor).toFixed(2));
+export type ShippingQuote = {
+  options: ShippingOption[];
+  /** true = algum produto ainda não tem peso/medidas cadastrados; o valor é uma estimativa. */
+  estimated: boolean;
+};
 
-  return [
-    {
-      id: "correios-pac",
-      carrier: "Correios",
-      service: "PAC",
-      price: standard,
-      deliveryDays: 6,
-      description: "Entrega econômica com rastreio",
-    },
-    {
-      id: "correios-sedex",
-      carrier: "Correios",
-      service: "SEDEX",
-      price: Number((standard * 1.68).toFixed(2)),
-      deliveryDays: 3,
-      description: "Entrega expressa com rastreio",
-    },
-    {
-      id: "ur3-express",
-      carrier: "UR3 Entregas",
-      service: "Express",
-      price: Number((standard * 2.12).toFixed(2)),
-      deliveryDays: 1,
-      description: "Prioridade máxima para capitais",
-    },
-  ];
+export type QuoteItem = { productId: number; quantity: number };
+
+async function fetchShippingQuote(postalCode: string, items: QuoteItem[]): Promise<ShippingQuote> {
+  const r = await invokeFunction<{ ok: boolean; error?: string; options?: ShippingOption[]; estimated?: boolean }>(
+    "shipping-quote",
+    { postalCode, items },
+  );
+  if (!r.ok || !r.options) throw new Error(r.error ?? "Não foi possível calcular o frete.");
+  return { options: r.options, estimated: Boolean(r.estimated) };
+}
+
+/**
+ * Frete real (Melhor Envio) pro carrinho. Só consulta com CEP de 8 dígitos e itens;
+ * o preço final é sempre recalculado no servidor na hora de pagar.
+ */
+export function useShippingQuote(postalCode: string | null, items: QuoteItem[]) {
+  const cep = (postalCode ?? "").replace(/\D/g, "");
+  const itemsKey = items.map((i) => `${i.productId}x${i.quantity}`).sort().join(",");
+  return useQuery({
+    queryKey: ["shipping-quote", cep, itemsKey],
+    enabled: cep.length === 8 && items.length > 0,
+    queryFn: () => fetchShippingQuote(cep, items),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
 }

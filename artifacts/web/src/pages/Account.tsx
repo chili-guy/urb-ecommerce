@@ -1,5 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Redirect, useSearchParams } from "wouter";
+import { Link, Redirect, useSearchParams } from "wouter";
 import {
   useProfile,
   useUpdateProfile,
@@ -14,11 +14,37 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { formatCurrency } from "@/lib/utils";
 import { formatCep, lookupCep, normalizeCep } from "@/lib/cep";
-import type { Address, AddressInput } from "@/lib/types";
+import { PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS, type Address, type AddressInput, type Order } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Package, User, MapPin, X, Plus, Star, Pencil, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+
+const STATUS_CHIP: Record<string, string> = {
+  "Aguardando pagamento": "bg-amber-100 text-amber-800",
+  "Pedido confirmado": "bg-blue-100 text-blue-800",
+  "Em separação": "bg-amber-100 text-amber-800",
+  Enviado: "bg-violet-100 text-violet-800",
+  Entregue: "bg-green-100 text-green-800",
+  Cancelado: "bg-red-100 text-red-800",
+};
+
+function StatusChip({ status }: { status: string }) {
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_CHIP[status] ?? "bg-secondary text-foreground"}`}>
+      {status}
+    </span>
+  );
+}
+
+/** Uma linha só sobre o pagamento (ou nada, em pedido antigo). */
+function paymentSummary(order: Order): string | null {
+  if (!order.paymentMethod) return null;
+  const method =
+    PAYMENT_METHOD_LABELS[order.paymentMethod] +
+    (order.paymentMethod === "credit_card" && order.installments && order.installments > 1 ? ` em ${order.installments}x` : "");
+  return order.paymentStatus ? `${method} · ${PAYMENT_STATUS_LABELS[order.paymentStatus]}` : method;
+}
 
 function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () => void }) {
   const { data: order, isLoading } = useOrder(orderId);
@@ -52,11 +78,23 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () =
             </div>
             <div className="text-right">
               <div className="text-sm text-muted-foreground mb-1">Status</div>
-              <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 px-2.5 py-0.5 text-xs font-medium">
-                {order.status}
-              </span>
+              <StatusChip status={order.status} />
             </div>
           </div>
+
+          {paymentSummary(order) && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4 text-sm">
+              <div>
+                <div className="text-muted-foreground mb-1">Pagamento</div>
+                <div className="font-medium">{paymentSummary(order)}</div>
+              </div>
+              {order.paymentStatus === "pending" && (
+                <Button asChild size="sm">
+                  <Link href={`/pedido/${order.id}`}>Ver como pagar</Link>
+                </Button>
+              )}
+            </div>
+          )}
 
           <div>
             <h3 className="font-display font-bold mb-4 border-b pb-2">Itens</h3>
@@ -77,6 +115,12 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () =
               <span className="text-muted-foreground">Subtotal</span>
               <span className="font-mono">{formatCurrency(order.subtotal)}</span>
             </div>
+            {order.discount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Desconto{order.couponCode ? ` (${order.couponCode})` : ""}</span>
+                <span className="font-mono text-primary">-{formatCurrency(order.discount)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Frete ({order.shippingOption.carrier})</span>
               <span className="font-mono">{formatCurrency(order.shipping)}</span>
@@ -497,18 +541,24 @@ export default function Account() {
                         </div>
                         <div>
                           <span className="text-muted-foreground block mb-1">Status</span>
-                          <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 px-2.5 py-0.5 text-xs font-medium">
-                            {order.status}
-                          </span>
+                          <StatusChip status={order.status} />
                         </div>
                       </div>
-                      <div className="p-4 flex items-center justify-between">
+                      <div className="p-4 flex flex-wrap items-center justify-between gap-3">
                         <div className="text-sm text-muted-foreground">
                           {order.items.length} {order.items.length === 1 ? 'item' : 'itens'}
+                          {paymentSummary(order) && <> · {paymentSummary(order)}</>}
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => setSelectedOrderId(order.id)}>
-                          Ver Detalhes
-                        </Button>
+                        <div className="flex gap-2">
+                          {order.paymentStatus === "pending" && (
+                            <Button asChild size="sm">
+                              <Link href={`/pedido/${order.id}`}>Pagar agora</Link>
+                            </Button>
+                          )}
+                          <Button variant="outline" size="sm" onClick={() => setSelectedOrderId(order.id)}>
+                            Ver Detalhes
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}

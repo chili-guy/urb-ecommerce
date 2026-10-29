@@ -4,6 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { supabase } from "./supabase";
+import { invokeFunction } from "./functions";
 import { PRODUCT_CONDITIONS } from "./types";
 import type {
   Address,
@@ -17,6 +18,9 @@ import type {
   DashboardSummary,
   Order,
   OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  PixPayment,
   Product,
   ProductCondition,
   ProductInput,
@@ -25,6 +29,7 @@ import type {
   Review,
   ReviewInput,
   Role,
+  ShippingAddress,
   ShippingOption,
 } from "./types";
 
@@ -72,6 +77,10 @@ function mapProduct(r: Row): Product {
     featured: Boolean(r.featured),
     condition: mapCondition(r.condition),
     specs: mapSpecs(r.specs),
+    weightG: r.weight_g == null ? null : Number(r.weight_g),
+    widthCm: r.width_cm == null ? null : Number(r.width_cm),
+    heightCm: r.height_cm == null ? null : Number(r.height_cm),
+    lengthCm: r.length_cm == null ? null : Number(r.length_cm),
     viewCount: Number(r.view_count ?? 0),
     rating: Number(r.rating),
     reviewCount: r.review_count as number,
@@ -100,6 +109,16 @@ function mapOrder(r: Row): Order {
     shippingOption: r.shipping_option as ShippingOption,
     items,
     createdAt: r.created_at as string,
+    paymentMethod: (r.payment_method as PaymentMethod) ?? null,
+    paymentStatus: (r.payment_status as PaymentStatus) ?? null,
+    paymentNote: (r.payment_note as string) ?? null,
+    paymentExpiresAt: (r.payment_expires_at as string) ?? null,
+    paidAt: (r.paid_at as string) ?? null,
+    installments: r.installments == null ? null : Number(r.installments),
+    pix: ((r.payment_data as { pix?: PixPayment } | null)?.pix as PixPayment | undefined) ?? null,
+    shippingAddress: (r.shipping_address as ShippingAddress) ?? null,
+    customerCpf: (r.customer_cpf as string) ?? null,
+    customerPhone: (r.customer_phone as string) ?? null,
   };
 }
 
@@ -230,6 +249,10 @@ function toProductRow(data: Partial<ProductInput>) {
   if (data.videoUrl !== undefined) row.video_url = data.videoUrl.trim() || null;
   if (data.featured !== undefined) row.featured = data.featured;
   if (data.condition !== undefined) row.condition = data.condition;
+  if (data.weightG !== undefined) row.weight_g = data.weightG;
+  if (data.widthCm !== undefined) row.width_cm = data.widthCm;
+  if (data.heightCm !== undefined) row.height_cm = data.heightCm;
+  if (data.lengthCm !== undefined) row.length_cm = data.lengthCm;
   if (data.specs !== undefined) {
     row.specs = data.specs
       .map((s) => ({ label: s.label.trim(), value: s.value.trim() }))
@@ -609,10 +632,11 @@ export function useMyOrders(enabled = true) {
   });
 }
 
-export function useOrder(id: number | null) {
+export function useOrder(id: number | null, opts: { poll?: boolean } = {}) {
   return useQuery({
     queryKey: ["order", id],
     enabled: id != null,
+    refetchInterval: opts.poll ? (query) => (query.state.data?.paymentStatus === "pending" ? 4000 : false) : false,
     queryFn: async (): Promise<Order> => {
       const { data, error } = await supabase
         .from("orders")
@@ -664,43 +688,33 @@ export function useUpdateOrderStatus() {
   });
 }
 
-export type CreateOrderInput = {
+export type CheckoutPayInput = {
   items: { productId: number; quantity: number }[];
-  shippingOption: ShippingOption;
-  customerName: string;
-  customerEmail: string;
-  postalCode: string;
+  shippingServiceId: string;
+  customer: { name: string; email: string; cpfCnpj: string; phone: string };
+  address: ShippingAddress;
   couponCode?: string | null;
+  paymentMethod: PaymentMethod;
+  installments?: number;
+  card?: { holderName: string; number: string; expiryMonth: string; expiryYear: string; ccv: string };
+  /** Uma por tentativa de compra: clique duplo ou reenvio não cria dois pedidos nem cobra duas vezes. */
+  idempotencyKey: string;
 };
 
-export function useCreateOrder() {
+export type CheckoutPayResult = {
+  ok: boolean;
+  orderId: number;
+  paymentStatus: PaymentStatus | null;
+  method: PaymentMethod;
+  /** Cartão sem resposta do Asaas: pode ter sido cobrado; o pedido fica aguardando e é confirmado por aviso. */
+  unconfirmed?: boolean;
+};
+
+/** Cria o pedido (estoque reservado) e cobra no Asaas — tudo no servidor. Exige login. */
+export function useCheckoutPay() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: CreateOrderInput): Promise<Order> => {
-      const basePayload = {
-        p_items: input.items,
-        p_shipping_option: input.shippingOption,
-        p_customer_name: input.customerName,
-        p_customer_email: input.customerEmail,
-        p_postal_code: input.postalCode,
-      };
-      let { data: orderId, error } = await supabase.rpc("create_order", {
-        ...basePayload,
-        p_coupon_code: input.couponCode || null,
-      });
-      if (error?.code === "PGRST202" && !input.couponCode) {
-        // Banco ainda sem a migração 0005 — cai para o create_order sem cupom.
-        ({ data: orderId, error } = await supabase.rpc("create_order", basePayload));
-      }
-      if (error) throw error;
-      const { data, error: fetchError } = await supabase
-        .from("orders")
-        .select(ORDER_SELECT)
-        .eq("id", orderId as number)
-        .single();
-      if (fetchError) throw fetchError;
-      return mapOrder(data);
-    },
+    mutationFn: (input: CheckoutPayInput) => invokeFunction<CheckoutPayResult>("checkout-pay", input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["products"] });
@@ -896,26 +910,10 @@ export type BlingSyncResult = {
   error?: string;
 };
 
-/** Chama uma Edge Function da Bling; em resposta não-2xx, lança com a mensagem real do corpo. */
-async function invokeBling<T>(fn: string, body: Record<string, unknown>): Promise<T> {
-  const { data, error } = await supabase.functions.invoke(fn, { method: "POST", body });
-  if (error) {
-    let message = error.message;
-    try {
-      const payload = await (error as { context?: Response }).context?.json();
-      if (payload?.error) message = payload.error === "not_connected" ? "Bling não conectada." : String(payload.error);
-    } catch {
-      /* corpo ilegível: fica a mensagem genérica */
-    }
-    throw new Error(message);
-  }
-  return data as T;
-}
-
 export function useSyncBlingStock() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (mode: BlingSyncMode) => invokeBling<BlingSyncResult>("bling-sync-stock", { mode }),
+    mutationFn: (mode: BlingSyncMode) => invokeFunction<BlingSyncResult>("bling-sync-stock", { mode }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bling-status"] });
       qc.invalidateQueries({ queryKey: ["bling-stock-items"] });
@@ -961,7 +959,7 @@ export function useBlingImportCandidates() {
     staleTime: Infinity,
     retry: false,
     queryFn: async (): Promise<BlingCandidates> => {
-      const r = await invokeBling<BlingCandidates & { ok: boolean; error?: string }>("bling-import", { action: "list" });
+      const r = await invokeFunction<BlingCandidates & { ok: boolean; error?: string }>("bling-import", { action: "list" });
       if (!r.ok) throw new Error(r.error ?? "Falha ao listar produtos da Bling");
       return r;
     },
@@ -982,7 +980,7 @@ export function useImportFromBling() {
       for (let i = 0; i < args.ids.length; i += IMPORT_CHUNK) {
         const chunk = args.ids.slice(i, i + IMPORT_CHUNK);
         try {
-          const r = await invokeBling<{ ok: boolean; error?: string; results?: BlingImportItem[] }>("bling-import", {
+          const r = await invokeFunction<{ ok: boolean; error?: string; results?: BlingImportItem[] }>("bling-import", {
             action: "import",
             ids: chunk,
             category: args.category,

@@ -38,6 +38,11 @@ export type Product = {
   featured: boolean;
   condition: ProductCondition;
   specs: ProductSpec[];
+  /** Embalagem pro cálculo de frete (null = ainda não cadastrado → frete estimado). */
+  weightG: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  lengthCm: number | null;
   viewCount: number;
   rating: number;
   reviewCount: number;
@@ -61,6 +66,10 @@ export type ProductInput = {
   featured: boolean;
   condition: ProductCondition;
   specs: ProductSpec[];
+  weightG: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  lengthCm: number | null;
 };
 
 /** Avaliação de cliente (tabela public.product_reviews). */
@@ -163,6 +172,7 @@ export type Role = "admin" | "operator";
 
 /** Estados possíveis de um pedido — espelham o CHECK em orders.status. */
 export const ORDER_STATUSES = [
+  "Aguardando pagamento",
   "Pedido confirmado",
   "Em separação",
   "Enviado",
@@ -189,6 +199,31 @@ export type OrderItem = {
   total: number;
 };
 
+export type PaymentMethod = "pix" | "credit_card";
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = { pix: "Pix", credit_card: "Cartão de crédito" };
+
+/** null = pedido antigo, de antes do pagamento real. */
+export type PaymentStatus = "pending" | "paid" | "failed" | "expired" | "refunded";
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  pending: "Aguardando pagamento",
+  paid: "Pago",
+  failed: "Pagamento recusado",
+  expired: "Prazo expirado",
+  refunded: "Reembolsado",
+};
+
+export type PixPayment = { payload: string; encodedImage: string; expirationDate: string | null };
+
+export type ShippingAddress = {
+  postalCode: string;
+  street: string;
+  number: string;
+  complement: string;
+  district: string;
+  city: string;
+  state: string;
+};
+
 export type Order = {
   id: number;
   customerName: string;
@@ -202,6 +237,16 @@ export type Order = {
   shippingOption: ShippingOption;
   items: OrderItem[];
   createdAt: string;
+  paymentMethod: PaymentMethod | null;
+  paymentStatus: PaymentStatus | null;
+  paymentNote: string | null;
+  paymentExpiresAt: string | null;
+  paidAt: string | null;
+  installments: number | null;
+  pix: PixPayment | null;
+  shippingAddress: ShippingAddress | null;
+  customerCpf: string | null;
+  customerPhone: string | null;
 };
 
 export type DashboardSummary = {

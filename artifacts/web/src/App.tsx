@@ -24,6 +24,7 @@ import WhyUr3 from '@/pages/WhyUr3';
 import ProductDetail from '@/pages/ProductDetail';
 import Cart from '@/pages/Cart';
 import Checkout from '@/pages/Checkout';
+import OrderPage from '@/pages/Order';
 import Account from '@/pages/Account';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -70,6 +71,7 @@ function StorefrontRouter() {
         <Route path="/produto/:id" component={ProductDetail} />
         <Route path="/carrinho" component={Cart} />
         <Route path="/checkout" component={Checkout} />
+        <Route path="/pedido/:id" component={OrderPage} />
         <Route path="/conta" component={Account} />
         <Route path="/entrar" component={Login} />
         <Route path="/cadastrar" component={Register} />
