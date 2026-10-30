@@ -18,8 +18,11 @@ import {
   useDeleteCoupon,
   useDeleteProduct,
   useGrantRole,
+  useInstallmentSettings,
   useProducts,
+  useRefundOrder,
   useRevokeRole,
+  useSaveInstallmentSettings,
   useSyncBlingStock,
   useTeam,
   useUpdateBanner,
@@ -54,6 +57,12 @@ import {
 import { formatCurrency, normalizeSearch } from "@/lib/utils";
 import { formatCep } from "@/lib/cep";
 import { formatCpfCnpj, formatPhone } from "@/lib/br-docs";
+import {
+  ASAAS_MAX_INSTALLMENTS,
+  ASAAS_MIN_INSTALLMENT,
+  maxInstallments,
+  parseInstallmentSettings,
+} from "@/lib/installments";
 import { BlingImportPanel } from "@/components/BlingImportPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -210,6 +219,7 @@ export default function Admin() {
 
 type AdminTab =
   | "dashboard"
+  | "payments"
   | "products"
   | "orders"
   | "coupons"
@@ -302,6 +312,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
               Administração
             </div>
           </div>
+          <NavItem icon={CreditCard} label="Pagamentos" active={activeTab === "payments"} onClick={() => setActiveTab("payments")} disabled={!admin.isAdmin} />
           <NavItem icon={Users} label="Equipe" active={activeTab === "team"} onClick={() => setActiveTab("team")} disabled={!admin.isAdmin} />
         </nav>
 
@@ -332,7 +343,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           <SheetTrigger asChild>
             <button
               className={`p-3 rounded-lg ${
-                ["coupons", "banners", "customers", "reports", "integracoes", "team"].includes(activeTab) ? "bg-primary/10 text-primary" : ""
+                ["coupons", "banners", "customers", "reports", "integracoes", "payments", "team"].includes(activeTab) ? "bg-primary/10 text-primary" : ""
               }`}
             >
               <MoreHorizontal className="h-5 w-5" />
@@ -357,6 +368,11 @@ function AdminDashboard({ admin }: { admin: Admin }) {
                 <Plug className="h-4 w-4" /> Integrações
               </button>
               {admin.isAdmin && (
+                <button onClick={() => { setActiveTab("payments"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "payments" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
+                  <CreditCard className="h-4 w-4" /> Pagamentos
+                </button>
+              )}
+              {admin.isAdmin && (
                 <button onClick={() => { setActiveTab("team"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "team" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
                   <Users className="h-4 w-4" /> Equipe
                 </button>
@@ -374,12 +390,13 @@ function AdminDashboard({ admin }: { admin: Admin }) {
         <div className="relative z-10 p-4 md:p-8 lg:p-10 min-h-full max-w-7xl mx-auto">
           {activeTab === "dashboard" && <DashboardTab />}
           {activeTab === "products" && <ProductsTab isAdmin={admin.isAdmin} />}
-          {activeTab === "orders" && <OrdersTab />}
+          {activeTab === "orders" && <OrdersTab isAdmin={admin.isAdmin} />}
           {activeTab === "coupons" && <CouponsTab />}
           {activeTab === "banners" && <BannersTab />}
           {activeTab === "customers" && <CustomersTab />}
           {activeTab === "reports" && <ReportsTab />}
           {activeTab === "integracoes" && <IntegrationsTab />}
+          {activeTab === "payments" && admin.isAdmin && <PaymentsTab />}
           {activeTab === "team" && admin.isAdmin && <TeamTab />}
         </div>
       </main>
@@ -1217,7 +1234,7 @@ function ProductsTab({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-function OrdersTab() {
+function OrdersTab({ isAdmin }: { isAdmin: boolean }) {
   const { data: orders, isLoading } = useAdminOrders();
   const updateStatus = useUpdateOrderStatus();
   const [searchTerm, setSearchTerm] = useState("");
@@ -1227,6 +1244,12 @@ function OrdersTab() {
   const detail = useMemo(() => orders?.find((o) => o.id === detailId) ?? null, [orders, detailId]);
 
   const handleStatusChange = (id: number, status: OrderStatus) => {
+    // Pedido pago só cancela com estorno: senão o cliente fica sem o dinheiro e a venda some do relatório.
+    if (status === "Cancelado" && orders?.find((o) => o.id === id)?.paymentStatus === "paid") {
+      toast.error(isAdmin ? 'Pedido já pago: abra o pedido e use "Estornar pagamento".' : "Pedido já pago: peça a um administrador para estornar.");
+      setDetailId(id);
+      return;
+    }
     setSavingId(id);
     updateStatus.mutate(
       { id, status },
@@ -1341,12 +1364,99 @@ function OrdersTab() {
         </div>
       </div>
 
-      {detail && <OrderDetailModal order={detail} onClose={() => setDetailId(null)} />}
+      {detail && <OrderDetailModal order={detail} canRefund={isAdmin} onClose={() => setDetailId(null)} />}
     </div>
   );
 }
 
-function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => void }) {
+const REFUND_REASONS = [
+  { label: "Produto indisponível", restoreStock: false },
+  { label: "Cliente desistiu", restoreStock: true },
+  { label: "Erro no pedido", restoreStock: true },
+  { label: "Outro motivo", restoreStock: true },
+] as const;
+
+function RefundPanel({ order }: { order: Order }) {
+  const refund = useRefundOrder();
+  const [open, setOpen] = useState(false);
+  const [reasonIdx, setReasonIdx] = useState(0);
+  const [restoreStock, setRestoreStock] = useState<boolean>(REFUND_REASONS[0].restoreStock);
+  // Pedido pago depois de cancelado nunca segurou estoque: não há o que devolver.
+  const holdsStock = order.status !== "Cancelado";
+  const shipped = order.status === "Enviado" || order.status === "Entregue";
+
+  const confirm = () =>
+    refund.mutate(
+      { orderId: order.id, restoreStock: holdsStock && restoreStock, reason: REFUND_REASONS[reasonIdx].label },
+      {
+        onSuccess: () => {
+          toast.success(`Pedido #${order.id} estornado. O Asaas devolve o valor ao cliente.`);
+          setOpen(false);
+        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : "Não consegui estornar."),
+      },
+    );
+
+  if (!open) {
+    return (
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)} className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive">
+        Estornar pagamento
+      </Button>
+    );
+  }
+  return (
+    <div className="space-y-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+      <p className="font-semibold text-foreground">Estornar {formatCurrency(order.total)} para o cliente?</p>
+      <p className="text-muted-foreground">
+        O valor total volta para o cliente pelo Asaas e o pedido fica <strong>Cancelado</strong>. Não dá para desfazer.
+      </p>
+      {shipped && (
+        <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> Este pedido já foi marcado como {order.status.toLowerCase()}. Confirme com o cliente e a transportadora antes de estornar.
+        </p>
+      )}
+      <div className="space-y-1">
+        <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground" htmlFor="refund-reason">Motivo</label>
+        <select
+          id="refund-reason"
+          value={reasonIdx}
+          onChange={(e) => {
+            const idx = Number(e.target.value);
+            setReasonIdx(idx);
+            setRestoreStock(REFUND_REASONS[idx].restoreStock);
+          }}
+          className="h-10 w-full rounded-md border bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          {REFUND_REASONS.map((r, i) => (
+            <option key={r.label} value={i}>{r.label}</option>
+          ))}
+        </select>
+      </div>
+      {holdsStock && (
+        <label className="flex items-start gap-2">
+          <input type="checkbox" checked={restoreStock} onChange={(e) => setRestoreStock(e.target.checked)} className="mt-1 h-4 w-4" />
+          <span>
+            Devolver os itens ao estoque do site
+            <span className="block text-xs text-muted-foreground">
+              Deixe desmarcado se o produto não existe mais (ex.: vendido em outra plataforma).
+            </span>
+          </span>
+        </label>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="destructive" size="sm" onClick={confirm} disabled={refund.isPending}>
+          {refund.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+          Confirmar estorno de {formatCurrency(order.total)}
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)} disabled={refund.isPending}>
+          Voltar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function OrderDetailModal({ order, canRefund, onClose }: { order: Order; canRefund: boolean; onClose: () => void }) {
   const addr = order.shippingAddress;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" onClick={onClose}>
@@ -1405,6 +1515,12 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {order.paymentNote}
               </p>
             )}
+            {order.paymentStatus === "paid" &&
+              (canRefund ? (
+                <RefundPanel order={order} />
+              ) : (
+                <p className="text-xs text-muted-foreground">Só administradores podem estornar um pagamento.</p>
+              ))}
           </div>
 
           <div className="space-y-2">
@@ -1431,6 +1547,118 @@ function OrderDetailModal({ order, onClose }: { order: Order; onClose: () => voi
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const PREVIEW_TOTALS = [100, 500, 1000, 5000];
+
+function PaymentsTab() {
+  const { data: saved, isLoading } = useInstallmentSettings();
+  const save = useSaveInstallmentSettings();
+  const [maxN, setMaxN] = useState("6");
+  const [minValue, setMinValue] = useState("5");
+
+  useEffect(() => {
+    if (saved) {
+      setMaxN(String(saved.maxInterestFree));
+      setMinValue(String(saved.minInstallmentValue).replace(".", ","));
+    }
+  }, [saved]);
+
+  const minParsed = Number(minValue.replace(",", "."));
+  const minValid = Number.isFinite(minParsed) && minParsed >= ASAAS_MIN_INSTALLMENT;
+  const draft = parseInstallmentSettings({ maxInterestFree: Number(maxN), minInstallmentValue: minParsed });
+  const dirty = !!saved && (saved.maxInterestFree !== Number(maxN) || saved.minInstallmentValue !== draft.minInstallmentValue);
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!minValid) {
+      toast.error(`A parcela mínima não pode ser menor que ${formatCurrency(ASAAS_MIN_INSTALLMENT)} (regra do Asaas).`);
+      return;
+    }
+    save.mutate(draft, {
+      onSuccess: () => toast.success("Parcelamento atualizado. Já vale no site."),
+      onError: () => toast.error("Não consegui salvar. Só administradores podem alterar."),
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-display font-bold text-foreground">Pagamentos</h2>
+        <p className="text-sm text-muted-foreground mt-1">Defina como o cliente pode parcelar no cartão de crédito.</p>
+      </div>
+
+      <form onSubmit={handleSave} className="max-w-2xl space-y-6 rounded-xl border border-border/60 bg-card p-6 shadow-sm">
+        <div>
+          <h3 className="font-display text-lg font-bold">Parcelamento sem juros</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            O cliente paga o mesmo total em qualquer número de parcelas. A taxa do parcelamento é descontada de você pelo
+            Asaas, não do cliente: confira a tabela de taxas no Asaas antes de aumentar o número de parcelas.
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label htmlFor="pay-max" className="text-sm font-semibold text-foreground">Parcelas sem juros (até)</label>
+            <select
+              id="pay-max"
+              value={maxN}
+              onChange={(e) => setMaxN(e.target.value)}
+              disabled={isLoading}
+              className="h-10 w-full rounded-md border bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {Array.from({ length: ASAAS_MAX_INSTALLMENTS }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>{n === 1 ? "Somente à vista" : `Até ${n}x`}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="pay-min" className="text-sm font-semibold text-foreground">Valor mínimo da parcela (R$)</label>
+            <Input
+              id="pay-min"
+              inputMode="decimal"
+              value={minValue}
+              onChange={(e) => setMinValue(e.target.value)}
+              disabled={isLoading}
+              aria-invalid={!minValid}
+            />
+            <p className={`text-xs ${minValid ? "text-muted-foreground" : "text-destructive"}`}>
+              Mínimo de {formatCurrency(ASAAS_MIN_INSTALLMENT)} (regra do Asaas). Use um valor maior para evitar parcelas muito pequenas.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Como fica no site</p>
+          <div className="overflow-hidden rounded-lg border border-border/60">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-border/50">
+                {PREVIEW_TOTALS.map((total) => {
+                  const n = maxInstallments(total, draft);
+                  return (
+                    <tr key={total}>
+                      <td className="px-4 py-2 font-mono text-muted-foreground">{formatCurrency(total)}</td>
+                      <td className="px-4 py-2">
+                        {n === 1 ? "só à vista" : `até ${n}x de ${formatCurrency(total / n)} sem juros`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={!dirty || !minValid || save.isPending}>
+            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Salvar
+          </Button>
+          {!dirty && !isLoading && <span className="text-xs text-muted-foreground">Nada para salvar.</span>}
+        </div>
+      </form>
     </div>
   );
 }

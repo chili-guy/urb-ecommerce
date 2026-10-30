@@ -5,6 +5,8 @@ import { PRODUCT_CONDITION_LABELS, type Product } from "@/lib/types";
 import { ShoppingCart, Star } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { trackAddToCart } from "@/lib/analytics";
+import { useInstallmentSettings } from "@/lib/api";
+import { DEFAULT_INSTALLMENT_SETTINGS, maxInstallments } from "@/lib/installments";
 
 export function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
@@ -51,7 +53,9 @@ export function ProductCard({ product }: { product: Product }) {
           100,
       )
     : 0;
-  const installmentValue = product.price / 12;
+  const { data: installmentSettings = DEFAULT_INSTALLMENT_SETTINGS } = useInstallmentSettings();
+  const installmentCount = maxInstallments(product.price, installmentSettings);
+  const installmentValue = product.price / installmentCount;
 
   const handleAdd = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -152,9 +156,11 @@ export function ProductCard({ product }: { product: Product }) {
                   à vista no Pix
                 </span>
               </div>
-              <p className="mt-1.5 text-[11px] text-[#555] sm:mt-3 sm:text-xs">
-                12x de <strong>{formatCurrency(installmentValue)}</strong> s/ juros
-              </p>
+              {installmentCount > 1 && (
+                <p className="mt-1.5 text-[11px] text-[#555] sm:mt-3 sm:text-xs">
+                  {installmentCount}x de <strong>{formatCurrency(installmentValue)}</strong> s/ juros
+                </p>
+              )}
             </div>
 
             <button

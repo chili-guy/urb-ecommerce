@@ -20,6 +20,18 @@ export function serviceClient() {
   return createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 }
 
+/** Confere o JWT do chamador com is_admin(): para o que mexe em dinheiro (ex.: estorno). */
+export async function authenticateAdmin(req: Request): Promise<{ isAdmin: boolean; userId: string | null }> {
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const caller = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: isAdmin } = await caller.rpc("is_admin");
+  if (!isAdmin) return { isAdmin: false, userId: null };
+  const { data } = await caller.auth.getUser(authHeader.replace(/^Bearer\s+/i, ""));
+  return { isAdmin: true, userId: data.user?.id ?? null };
+}
+
 /** Confere o JWT do chamador com is_staff() (a mesma regra do painel). */
 export async function authenticateStaff(req: Request): Promise<{ isStaff: boolean; userId: string | null }> {
   const authHeader = req.headers.get("Authorization") ?? "";

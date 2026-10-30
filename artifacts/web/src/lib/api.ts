@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 import { invokeFunction } from "./functions";
+import { DEFAULT_INSTALLMENT_SETTINGS, parseInstallmentSettings, type InstallmentSettings } from "./installments";
 import { PRODUCT_CONDITIONS } from "./types";
 import type {
   Address,
@@ -720,6 +721,55 @@ export function useCheckoutPay() {
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
+  });
+}
+
+/**
+ * Estorno total de um pedido pago (só administrador): pede o reembolso ao Asaas e cancela o pedido.
+ * `restoreStock`: devolve os itens ao estoque do site (deixe desligado se o produto não existe mais).
+ */
+export function useRefundOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { orderId: number; restoreStock: boolean; reason: string }) =>
+      invokeFunction<{ ok: boolean; result?: string }>("order-refund", input),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order", vars.orderId] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+  });
+}
+
+// ----------------------------------------------------- configurações da loja ---
+/** Parcelamento no cartão (painel > Pagamentos). Sem a tabela ainda, vale o padrão. */
+export function useInstallmentSettings() {
+  return useQuery({
+    queryKey: ["store-settings", "installments"],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<InstallmentSettings> => {
+      const { data, error } = await supabase
+        .from("store_settings")
+        .select("value")
+        .eq("key", "installments")
+        .maybeSingle();
+      if (error) return DEFAULT_INSTALLMENT_SETTINGS;
+      return parseInstallmentSettings(data?.value);
+    },
+  });
+}
+
+export function useSaveInstallmentSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (value: InstallmentSettings) => {
+      const { error } = await supabase
+        .from("store_settings")
+        .upsert({ key: "installments", value }, { onConflict: "key" });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["store-settings", "installments"] }),
   });
 }
 

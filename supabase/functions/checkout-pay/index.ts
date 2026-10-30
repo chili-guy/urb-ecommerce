@@ -26,9 +26,11 @@ import {
   type AsaasPayment,
   type CustomerFields,
 } from "../_shared/asaas.ts";
-import { installmentsAllowed, parseCheckoutInput, type CheckoutInput } from "../_shared/checkout-input.ts";
+import { parseCheckoutInput, type CheckoutInput } from "../_shared/checkout-input.ts";
 import { IntegrationError, UserError } from "../_shared/errors.ts";
 import { CORS_HEADERS, json, serviceClient } from "../_shared/http.ts";
+import { installmentsAllowed, maxInstallments } from "../_shared/installments.ts";
+import { loadInstallmentSettings } from "../_shared/store-settings.ts";
 import { loadShippingConfig, quoteForItems } from "../_shared/shipping.ts";
 import { productLoader } from "../_shared/shipping-db.ts";
 
@@ -219,9 +221,19 @@ Deno.serve(async (req) => {
     }
 
     const total = Number(order.total);
-    if (input.paymentMethod === "credit_card" && !installmentsAllowed(total, input.installments)) {
-      await cancelOrder(db, orderId, "Parcelamento abaixo do mínimo.");
-      throw new UserError("Esse parcelamento deixa a parcela abaixo de R$ 5,00. Escolha menos parcelas.", 422);
+    if (input.paymentMethod === "credit_card") {
+      // A regra vem do painel (Pagamentos); o número que o navegador mandou só vale se couber nela.
+      const settings = await loadInstallmentSettings(db);
+      if (!installmentsAllowed(total, input.installments, settings)) {
+        await cancelOrder(db, orderId, "Parcelamento fora do permitido.");
+        const max = maxInstallments(total, settings);
+        throw new UserError(
+          max === 1
+            ? "Essa compra só pode ser paga à vista no cartão."
+            : `Esse parcelamento não está disponível. Escolha até ${max}x.`,
+          422,
+        );
+      }
     }
 
     // 7. cobrança

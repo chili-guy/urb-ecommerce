@@ -126,9 +126,3 @@ export function parseCheckoutInput(raw: unknown, now: Date = new Date()): Checko
 
   return { items, shippingServiceId, customer, address, couponCode, paymentMethod, installments, card, idempotencyKey };
 }
-
-/** O Asaas não aceita parcela abaixo de R$ 5,00. */
-export const MIN_INSTALLMENT_VALUE = 5;
-export function installmentsAllowed(total: number, installments: number): boolean {
-  return installments === 1 || total / installments >= MIN_INSTALLMENT_VALUE;
-}

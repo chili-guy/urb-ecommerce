@@ -94,13 +94,15 @@ Deno.serve(async (req) => {
           break;
         }
         case "refunded": {
-          const { error } = await db
-            .from("orders")
-            .update({ payment_status: "refunded", payment_note: "Pagamento reembolsado no Asaas." })
-            .eq("id", order.id)
-            .eq("payment_status", "paid");
+          // Estorno pelo painel: o banco já sabe se o estoque volta (refund_intent). Estorno feito
+          // direto no Asaas: cancela o pedido (a venda sai do relatório) e NÃO mexe no estoque.
+          const { data, error } = await db.rpc("refund_order_record", {
+            p_order_id: order.id,
+            p_restore_stock: null,
+            p_note: "Reembolsado direto no painel do Asaas. O estoque do site não foi alterado: confira se precisa devolver.",
+          });
           if (error) throw error;
-          result = "refunded";
+          result = String(data);
           break;
         }
         case "chargeback": {

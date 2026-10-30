@@ -159,6 +159,26 @@ export type AsaasPayment = { id: string; status: string; invoiceUrl?: string; va
 const PAID_STATUSES = new Set(["CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH"]);
 export const isPaidStatus = (status: string | undefined): boolean => PAID_STATUSES.has(String(status));
 
+/**
+ * O que fazer com uma cobrança na hora do estorno, conforme o status que o Asaas mostra:
+ * - refund: paga (cartão CONFIRMED / Pix RECEIVED), dá pra pedir o estorno;
+ * - already: o estorno já foi pedido ou feito (tentar de novo seria erro) — só fechamos o pedido;
+ * - blocked: não há o que estornar (aguardando, vencida, recebida em dinheiro, contestação...).
+ */
+export function planRefund(status: string | undefined): "refund" | "already" | "blocked" {
+  switch (String(status)) {
+    case "CONFIRMED":
+    case "RECEIVED":
+      return "refund";
+    case "REFUNDED":
+    case "REFUND_REQUESTED":
+    case "REFUND_IN_PROGRESS":
+      return "already";
+    default:
+      return "blocked";
+  }
+}
+
 /** Acha o cliente pelo CPF/CNPJ (evita duplicar) ou cria. */
 export async function findOrCreateCustomer(cfg: AsaasConfig, c: CustomerFields): Promise<string> {
   const found = await asaasRequest<{ data?: { id: string }[] }>(

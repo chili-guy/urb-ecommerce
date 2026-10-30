@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useCart } from "@/lib/cart-context";
 import { useAuth } from "@/lib/auth-context";
-import { useAddresses, useCheckoutPay, useProfile, previewCoupon } from "@/lib/api";
+import { useAddresses, useCheckoutPay, useInstallmentSettings, useProfile, previewCoupon } from "@/lib/api";
+import { DEFAULT_INSTALLMENT_SETTINGS, maxInstallments } from "@/lib/installments";
 import { FunctionHttpError } from "@/lib/functions";
 import { formatCurrency } from "@/lib/utils";
 import { formatCep, lookupCep, normalizeCep } from "@/lib/cep";
@@ -24,8 +25,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CreditCard, Loader2, Lock, MapPin, QrCode, Tag, X } from "lucide-react";
 import { toast } from "sonner";
-
-const MIN_INSTALLMENT = 5; // o Asaas não aceita parcela abaixo de R$ 5,00
 
 function shortAddress(a: Address): string {
   return [
@@ -192,10 +191,11 @@ export default function Checkout() {
   const selectedOption = shippingOptions.find((o) => o.id === selectedShipping);
   const total = Math.max(subtotal + (selectedOption?.price ?? 0) - discount, 0);
 
+  const { data: installmentSettings = DEFAULT_INSTALLMENT_SETTINGS } = useInstallmentSettings();
   const installmentOptions = useMemo(() => {
-    const max = Math.max(1, Math.min(12, Math.floor(total / MIN_INSTALLMENT)));
+    const max = maxInstallments(total, installmentSettings);
     return Array.from({ length: max }, (_, i) => i + 1);
-  }, [total]);
+  }, [total, installmentSettings]);
   useEffect(() => {
     setInstallments((n) => Math.min(n, installmentOptions.length));
   }, [installmentOptions]);
@@ -491,7 +491,15 @@ export default function Checkout() {
                 {(
                   [
                     { id: "pix", label: "Pix", hint: "Aprovação na hora", Icon: QrCode },
-                    { id: "credit_card", label: "Cartão de crédito", hint: "Em até 12x sem juros", Icon: CreditCard },
+                    {
+                      id: "credit_card",
+                      label: "Cartão de crédito",
+                      hint:
+                        installmentSettings.maxInterestFree > 1
+                          ? `Em até ${installmentSettings.maxInterestFree}x sem juros`
+                          : "À vista",
+                      Icon: CreditCard,
+                    },
                   ] as const
                 ).map(({ id, label, hint, Icon }) => (
                   <button
