@@ -41,7 +41,7 @@ function ShippingEstimator({ productId, quantity }: { productId: number; quantit
   const quote = useShippingQuote(submittedCep, items);
 
   const handleCalculate = () => {
-    if (cep.replace(/D/g, "").length < 8) {
+    if (cep.replace(/\D/g, "").length !== 8) {
       toast.error("CEP inválido");
       return;
     }
@@ -84,6 +84,9 @@ function ShippingEstimator({ productId, quantity }: { productId: number; quantit
             </li>
           ))}
         </ul>
+      )}
+      {quote.data && !quote.isFetching && quote.data.options.some((o) => o.freeShippingRule) && (
+        <p className="mt-2 text-xs font-medium text-primary">Frete grátis para a sua região.</p>
       )}
       <p className="mt-2 text-[11px] text-muted-foreground">O valor final é confirmado no checkout.</p>
     </div>

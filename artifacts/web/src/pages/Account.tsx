@@ -110,6 +110,14 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () =
             </div>
           </div>
 
+          {order.trackingCode && (
+            <div className="rounded-lg border p-4 text-sm">
+              <div className="text-muted-foreground mb-1">Código de rastreio</div>
+              <div className="font-mono font-semibold text-primary">{order.trackingCode}</div>
+              <p className="mt-1 text-xs text-muted-foreground">Acompanhe pelo site da transportadora.</p>
+            </div>
+          )}
+
           <div className="bg-secondary/30 p-4 rounded-lg space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Subtotal</span>
@@ -123,7 +131,7 @@ function OrderDetailModal({ orderId, onClose }: { orderId: number, onClose: () =
             )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Frete ({order.shippingOption.carrier})</span>
-              <span className="font-mono">{formatCurrency(order.shipping)}</span>
+              <span className="font-mono">{order.shipping === 0 ? "Grátis" : formatCurrency(order.shipping)}</span>
             </div>
             <div className="flex justify-between pt-2 border-t font-bold text-base">
               <span>Total</span>

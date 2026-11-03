@@ -11,6 +11,9 @@
 import { AsaasError, asaasRequest, loadAsaasConfig, planRefund, type AsaasPayment } from "../_shared/asaas.ts";
 import { UserError } from "../_shared/errors.ts";
 import { CORS_HEADERS, authenticateAdmin, json, serviceClient } from "../_shared/http.ts";
+import { cancelLabelOnRefund } from "../_shared/label-store.ts";
+import { createMeApi } from "../_shared/labels.ts";
+import { loadShippingConfig } from "../_shared/shipping.ts";
 
 function stamp(now = new Date()): string {
   return new Intl.DateTimeFormat("pt-BR", {
@@ -104,8 +107,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log("[order-refund] pedido", orderId, "estornado por", auth.userId, "estoque:", restoreStock, "->", result);
-    return json({ ok: true, result });
+    // Etiqueta já comprada para um pedido estornado: cancela na Melhor Envio (o saldo volta em até 12 h).
+    let label: "none" | "cart" | "cancelled" | "failed" = "none";
+    const shipCfg = loadShippingConfig(Deno.env);
+    if (shipCfg) {
+      try {
+        label = await cancelLabelOnRefund(db, createMeApi(shipCfg), orderId);
+      } catch (err) {
+        console.error("[order-refund] etiqueta do pedido", orderId, err instanceof Error ? err.message : err);
+        label = "failed";
+      }
+    }
+
+    console.log("[order-refund] pedido", orderId, "estornado por", auth.userId, "estoque:", restoreStock, "etiqueta:", label, "->", result);
+    return json({ ok: true, result, label });
   } catch (err) {
     if (err instanceof UserError) return json({ ok: false, error: err.message }, err.status);
     console.error("[order-refund] pedido", orderIdForLog, err instanceof Error ? err.message : err);

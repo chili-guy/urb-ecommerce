@@ -189,6 +189,10 @@ export type ShippingOption = {
   price: number;
   deliveryDays: number;
   description: string;
+  /** Só quando uma regra do painel zerou o frete: o que a transportadora cobra de verdade da loja. */
+  originalPrice?: number;
+  /** Nome da regra do painel que zerou o frete. */
+  freeShippingRule?: string;
 };
 
 export type OrderItem = {
@@ -247,6 +251,10 @@ export type Order = {
   shippingAddress: ShippingAddress | null;
   customerCpf: string | null;
   customerPhone: string | null;
+  /** Código de rastreio da etiqueta (o cliente vê). */
+  trackingCode: string | null;
+  /** Chave da nota fiscal (44 dígitos), informada pela equipe antes de gerar a etiqueta. */
+  invoiceKey: string | null;
 };
 
 export type DashboardSummary = {

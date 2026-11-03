@@ -229,13 +229,24 @@ export default function OrderPage() {
             )}
             <div className="flex justify-between text-muted-foreground">
               <span>Frete ({order.shippingOption.carrier} — {order.shippingOption.service})</span>
-              <span className="font-mono">{formatCurrency(order.shipping)}</span>
+              <span className={`font-mono ${order.shipping === 0 ? "text-primary" : ""}`}>
+                {order.shipping === 0 ? "Grátis" : formatCurrency(order.shipping)}
+              </span>
             </div>
             <div className="flex justify-between border-t pt-3 text-base font-bold">
               <span>Total</span>
               <span className="font-mono text-primary">{formatCurrency(order.total)}</span>
             </div>
           </div>
+          {order.trackingCode && (
+            <div className="border-t pt-4">
+              <p className="mb-1 font-medium">Código de rastreio</p>
+              <p className="font-mono text-base text-primary">{order.trackingCode}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Acompanhe pelo site da transportadora. O código só passa a mostrar movimento depois que o pacote é postado.
+              </p>
+            </div>
+          )}
           <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
             {addr && (
               <div>

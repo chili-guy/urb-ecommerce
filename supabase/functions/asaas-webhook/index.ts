@@ -9,6 +9,7 @@
 // Deploy: supabase functions deploy asaas-webhook --no-verify-jwt
 
 import { CORS_HEADERS, json, serviceClient } from "../_shared/http.ts";
+import { triggerAutoLabel } from "../_shared/label-store.ts";
 import { actionForEvent, tokenMatches, type AsaasWebhookBody } from "../_shared/payment-events.ts";
 
 Deno.serve(async (req) => {
@@ -80,6 +81,8 @@ Deno.serve(async (req) => {
           const { data, error } = await db.rpc("mark_order_paid", { p_order_id: order.id, p_payment_id: payment.id });
           if (error) throw error;
           result = String(data);
+          // Pagamento novo (não um aviso repetido): gera a etiqueta em segundo plano, se estiver ligada no painel.
+          if (result === "paid" || result === "reactivated") triggerAutoLabel(order.id);
           break;
         }
         case "failed":

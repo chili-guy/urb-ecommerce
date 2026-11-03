@@ -6,6 +6,14 @@ import {
 import { supabase } from "./supabase";
 import { invokeFunction } from "./functions";
 import { DEFAULT_INSTALLMENT_SETTINGS, parseInstallmentSettings, type InstallmentSettings } from "./installments";
+import type { ShippingRule, ShippingRuleInput } from "./shipping-rules";
+import {
+  parseLabelSettings,
+  parseSender,
+  type LabelSettings,
+  type OrderShipment,
+  type Sender,
+} from "./labels";
 import { PRODUCT_CONDITIONS } from "./types";
 import type {
   Address,
@@ -120,6 +128,8 @@ function mapOrder(r: Row): Order {
     shippingAddress: (r.shipping_address as ShippingAddress) ?? null,
     customerCpf: (r.customer_cpf as string) ?? null,
     customerPhone: (r.customer_phone as string) ?? null,
+    trackingCode: (r.tracking_code as string) ?? null,
+    invoiceKey: (r.invoice_key as string) ?? null,
   };
 }
 
@@ -732,7 +742,7 @@ export function useRefundOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { orderId: number; restoreStock: boolean; reason: string }) =>
-      invokeFunction<{ ok: boolean; result?: string }>("order-refund", input),
+      invokeFunction<{ ok: boolean; result?: string; label?: "none" | "cart" | "cancelled" | "failed" }>("order-refund", input),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ["orders"] });
       qc.invalidateQueries({ queryKey: ["order", vars.orderId] });
@@ -770,6 +780,182 @@ export function useSaveInstallmentSettings() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["store-settings", "installments"] }),
+  });
+}
+
+// ------------------------------------------------------------ frete grátis (regras) ---
+const mapShippingRule = (r: Row): ShippingRule => ({
+  id: Number(r.id),
+  name: String(r.name ?? ""),
+  active: r.active === true,
+  areaType: (["all", "states", "cities", "cep_range"].includes(String(r.area_type)) ? r.area_type : "states") as ShippingRule["areaType"],
+  states: Array.isArray(r.states) ? (r.states as string[]) : [],
+  cities: Array.isArray(r.cities) ? (r.cities as string[]) : [],
+  cepFrom: (r.cep_from as string) ?? null,
+  cepTo: (r.cep_to as string) ?? null,
+  minOrderValue: r.min_order_value == null ? null : Number(r.min_order_value),
+  scope: r.scope === "all" ? "all" : "cheapest",
+});
+
+const toShippingRuleRow = (rule: ShippingRuleInput) => ({
+  name: rule.name.trim(),
+  active: rule.active,
+  area_type: rule.areaType,
+  states: rule.areaType === "states" || rule.areaType === "cities" ? rule.states : [],
+  cities: rule.areaType === "cities" ? rule.cities : [],
+  cep_from: rule.areaType === "cep_range" ? rule.cepFrom : null,
+  cep_to: rule.areaType === "cep_range" ? rule.cepTo : null,
+  min_order_value: rule.minOrderValue,
+  scope: rule.scope,
+});
+
+/** Regras de frete grátis (só administrador enxerga: a RLS devolve lista vazia pra quem não é). */
+export function useShippingRules(enabled = true) {
+  return useQuery({
+    queryKey: ["shipping-rules"],
+    enabled,
+    queryFn: async (): Promise<ShippingRule[]> => {
+      const { data, error } = await supabase.from("shipping_rules").select("*").order("id", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map(mapShippingRule);
+    },
+  });
+}
+
+export function useSaveShippingRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, rule }: { id?: number; rule: ShippingRuleInput }) => {
+      const row = toShippingRuleRow(rule);
+      const { error } = id
+        ? await supabase.from("shipping_rules").update(row).eq("id", id)
+        : await supabase.from("shipping_rules").insert(row);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["shipping-rules"] }),
+  });
+}
+
+export function useDeleteShippingRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await supabase.from("shipping_rules").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["shipping-rules"] }),
+  });
+}
+
+export type ShippingRulesCheck = {
+  ok: boolean;
+  place: { uf: string; city: string } | null;
+  needsPlace: boolean;
+  matched: { id: number; name: string; scope: "cheapest" | "all" }[];
+  appliedRule: { id: number; name: string; scope: "cheapest" | "all" } | null;
+};
+
+/** Simulador da aba Frete: com este CEP e este valor de pedido, haveria frete grátis? */
+export function useCheckShippingRules() {
+  return useMutation({
+    mutationFn: (input: { cep: string; subtotal: number }) => invokeFunction<ShippingRulesCheck>("shipping-rules-check", input),
+  });
+}
+
+// ------------------------------------------------------ etiquetas (Melhor Envio) ---
+const mapShipment = (r: Row): OrderShipment => ({
+  orderId: Number(r.order_id),
+  status: (["processing", "ok", "failed"].includes(String(r.status)) ? r.status : "failed") as OrderShipment["status"],
+  step: (["cart", "purchased", "generated"].includes(String(r.step)) ? r.step : null) as OrderShipment["step"],
+  meOrderId: (r.me_order_id as string) ?? null,
+  protocol: (r.protocol as string) ?? null,
+  price: r.price == null ? null : Number(r.price),
+  tracking: (r.tracking as string) ?? null,
+  note: (r.note as string) ?? null,
+  attempts: Number(r.attempts ?? 0),
+  updatedAt: String(r.updated_at ?? ""),
+});
+
+/** Andamento das etiquetas (só a equipe enxerga; sem a tabela ainda, vem vazio). */
+export function useOrderShipments(enabled = true) {
+  return useQuery({
+    queryKey: ["order-shipments"],
+    enabled,
+    queryFn: async (): Promise<OrderShipment[]> => {
+      const { data, error } = await supabase.from("order_shipments").select("*");
+      if (error) return [];
+      return (data ?? []).map(mapShipment);
+    },
+  });
+}
+
+export type LabelActionResult = {
+  ok: boolean;
+  result?: string;
+  url?: string;
+  tracking?: string | null;
+  status?: string | null;
+  estimated?: boolean;
+};
+
+/** Gera, imprime, atualiza o rastreio ou cancela a etiqueta de um pedido (equipe). */
+export function useLabelAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { action: "generate" | "print" | "tracking" | "cancel"; orderId: number; invoiceKey?: string }) =>
+      invokeFunction<LabelActionResult>("order-label", input),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["order-shipments"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order", vars.orderId] });
+    },
+  });
+}
+
+export type LabelCheck = {
+  ok: boolean;
+  settings: LabelSettings;
+  senderMissing: string[];
+  balance: { balance: number; reserved: number; debts: number } | null;
+  tokenNote: string | null;
+};
+
+/** "Testar conexão": saldo da carteira da Melhor Envio e se o cadastro está completo (administrador). */
+export function useLabelCheck() {
+  return useMutation({ mutationFn: () => invokeFunction<LabelCheck>("order-label", { action: "check" }) });
+}
+
+/** Modo, documento e remetente das etiquetas (tabela privada: só administrador). */
+export function useLabelSettings(enabled = true) {
+  return useQuery({
+    queryKey: ["label-settings"],
+    enabled,
+    queryFn: async (): Promise<{ settings: LabelSettings; sender: Sender }> => {
+      const { data, error } = await supabase
+        .from("private_settings")
+        .select("key, value")
+        .in("key", ["shipping_labels", "shipping_sender"]);
+      if (error) throw error;
+      const byKey = new Map((data ?? []).map((r) => [r.key as string, r.value]));
+      return { settings: parseLabelSettings(byKey.get("shipping_labels")), sender: parseSender(byKey.get("shipping_sender")) };
+    },
+  });
+}
+
+export function useSaveLabelSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { settings: LabelSettings; sender: Sender }) => {
+      const { error } = await supabase.from("private_settings").upsert(
+        [
+          { key: "shipping_labels", value: input.settings },
+          { key: "shipping_sender", value: input.sender },
+        ],
+        { onConflict: "key" },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["label-settings"] }),
   });
 }
 

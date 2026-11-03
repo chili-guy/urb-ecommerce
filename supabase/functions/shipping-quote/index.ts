@@ -12,6 +12,7 @@ import { IntegrationError, UserError } from "../_shared/errors.ts";
 import { CORS_HEADERS, json, serviceClient } from "../_shared/http.ts";
 import { loadShippingConfig, quoteForItems } from "../_shared/shipping.ts";
 import { productLoader } from "../_shared/shipping-db.ts";
+import { applyRulesToQuote } from "../_shared/shipping-rules.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
@@ -35,17 +36,15 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "O cálculo de frete ainda não está disponível. Tente mais tarde." }, 503);
     }
 
-    const { options, estimated } = await quoteForItems({
-      cfg,
-      items,
-      destCep,
-      loadProducts: productLoader(serviceClient()),
-    });
+    const db = serviceClient();
+    const quote = await quoteForItems({ cfg, items, destCep, loadProducts: productLoader(db) });
 
-    if (options.length === 0) {
+    if (quote.options.length === 0) {
       return json({ ok: false, error: "Nenhuma transportadora entrega esse pedido nesse CEP." }, 200);
     }
-    return json({ ok: true, options, estimated });
+    // Frete grátis definido no painel (Frete): zera o preço das opções cobertas pela regra.
+    const { options } = await applyRulesToQuote({ db, options: quote.options, cep: destCep, subtotal: quote.subtotal });
+    return json({ ok: true, options, estimated: quote.estimated });
   } catch (err) {
     if (err instanceof UserError) return json({ ok: false, error: err.message }, err.status);
     console.error("[shipping-quote]", err instanceof IntegrationError ? err.message : err);

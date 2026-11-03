@@ -16,13 +16,22 @@ import {
   useDashboardSummary,
   useDeleteBanner,
   useDeleteCoupon,
+  useCheckShippingRules,
+  useLabelAction,
+  useLabelCheck,
+  useLabelSettings,
+  useOrderShipments,
+  useSaveLabelSettings,
   useDeleteProduct,
+  useDeleteShippingRule,
   useGrantRole,
   useInstallmentSettings,
   useProducts,
   useRefundOrder,
   useRevokeRole,
   useSaveInstallmentSettings,
+  useSaveShippingRule,
+  useShippingRules,
   useSyncBlingStock,
   useTeam,
   useUpdateBanner,
@@ -55,7 +64,19 @@ import {
   type Role,
 } from "@/lib/types";
 import { formatCurrency, normalizeSearch } from "@/lib/utils";
-import { formatCep } from "@/lib/cep";
+import { formatCep, lookupCep, normalizeCep } from "@/lib/cep";
+import { BR_REGIONS, BR_STATES, describeRule, type ShippingRule, type ShippingRuleInput } from "@/lib/shipping-rules";
+import {
+  EMPTY_SENDER,
+  isValidNfeKey,
+  senderProblems,
+  shipmentBadge,
+  type LabelDocument,
+  type LabelMode,
+  type OrderShipment,
+  type Sender,
+  type ShipmentTone,
+} from "@/lib/labels";
 import { formatCpfCnpj, formatPhone } from "@/lib/br-docs";
 import {
   ASAAS_MAX_INSTALLMENTS,
@@ -113,6 +134,7 @@ import {
   RefreshCw,
   Unplug,
   Copy,
+  Truck,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -220,6 +242,7 @@ export default function Admin() {
 type AdminTab =
   | "dashboard"
   | "payments"
+  | "shipping"
   | "products"
   | "orders"
   | "coupons"
@@ -312,6 +335,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
               Administração
             </div>
           </div>
+          <NavItem icon={Truck} label="Frete" active={activeTab === "shipping"} onClick={() => setActiveTab("shipping")} disabled={!admin.isAdmin} />
           <NavItem icon={CreditCard} label="Pagamentos" active={activeTab === "payments"} onClick={() => setActiveTab("payments")} disabled={!admin.isAdmin} />
           <NavItem icon={Users} label="Equipe" active={activeTab === "team"} onClick={() => setActiveTab("team")} disabled={!admin.isAdmin} />
         </nav>
@@ -343,7 +367,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           <SheetTrigger asChild>
             <button
               className={`p-3 rounded-lg ${
-                ["coupons", "banners", "customers", "reports", "integracoes", "payments", "team"].includes(activeTab) ? "bg-primary/10 text-primary" : ""
+                ["coupons", "banners", "customers", "reports", "integracoes", "shipping", "payments", "team"].includes(activeTab) ? "bg-primary/10 text-primary" : ""
               }`}
             >
               <MoreHorizontal className="h-5 w-5" />
@@ -367,6 +391,11 @@ function AdminDashboard({ admin }: { admin: Admin }) {
               <button onClick={() => { setActiveTab("integracoes"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "integracoes" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
                 <Plug className="h-4 w-4" /> Integrações
               </button>
+              {admin.isAdmin && (
+                <button onClick={() => { setActiveTab("shipping"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "shipping" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
+                  <Truck className="h-4 w-4" /> Frete
+                </button>
+              )}
               {admin.isAdmin && (
                 <button onClick={() => { setActiveTab("payments"); setMoreOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium ${activeTab === "payments" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-secondary"}`}>
                   <CreditCard className="h-4 w-4" /> Pagamentos
@@ -396,6 +425,7 @@ function AdminDashboard({ admin }: { admin: Admin }) {
           {activeTab === "customers" && <CustomersTab />}
           {activeTab === "reports" && <ReportsTab />}
           {activeTab === "integracoes" && <IntegrationsTab />}
+          {activeTab === "shipping" && admin.isAdmin && <ShippingTab />}
           {activeTab === "payments" && admin.isAdmin && <PaymentsTab />}
           {activeTab === "team" && admin.isAdmin && <TeamTab />}
         </div>
@@ -1242,6 +1272,8 @@ function OrdersTab({ isAdmin }: { isAdmin: boolean }) {
   const [savingId, setSavingId] = useState<number | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const detail = useMemo(() => orders?.find((o) => o.id === detailId) ?? null, [orders, detailId]);
+  const { data: shipments } = useOrderShipments();
+  const shipmentByOrder = useMemo(() => new Map((shipments ?? []).map((sh) => [sh.orderId, sh])), [shipments]);
 
   const handleStatusChange = (id: number, status: OrderStatus) => {
     // Pedido pago só cancela com estorno: senão o cliente fica sem o dinheiro e a venda some do relatório.
@@ -1311,15 +1343,16 @@ function OrdersTab({ isAdmin }: { isAdmin: boolean }) {
                 <th className="px-6 py-4">Cliente</th>
                 <th className="px-6 py-4">Data</th>
                 <th className="px-6 py-4">Pagamento</th>
+                <th className="px-6 py-4">Etiqueta</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-right">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {isLoading ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">Carregando pedidos...</td></tr>
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">Carregando pedidos...</td></tr>
               ) : filteredOrders.length === 0 ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">Nenhum pedido encontrado.</td></tr>
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">Nenhum pedido encontrado.</td></tr>
               ) : (
                 filteredOrders.map((order) => (
                   <tr key={order.id} className="hover:bg-secondary/10 transition-colors">
@@ -1339,6 +1372,7 @@ function OrdersTab({ isAdmin }: { isAdmin: boolean }) {
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">{new Date(order.createdAt).toLocaleDateString("pt-BR")}</td>
                     <td className="px-6 py-4"><PaymentBadge order={order} /></td>
+                    <td className="px-6 py-4"><ShipmentBadge order={order} shipment={shipmentByOrder.get(order.id)} /></td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <select
@@ -1364,7 +1398,169 @@ function OrdersTab({ isAdmin }: { isAdmin: boolean }) {
         </div>
       </div>
 
-      {detail && <OrderDetailModal order={detail} canRefund={isAdmin} onClose={() => setDetailId(null)} />}
+      {detail && <OrderDetailModal order={detail} canRefund={isAdmin} shipment={shipmentByOrder.get(detail.id)} onClose={() => setDetailId(null)} />}
+    </div>
+  );
+}
+
+const SHIPMENT_TONES: Record<ShipmentTone, string> = {
+  neutral: "border-border/60 bg-secondary text-muted-foreground",
+  warn: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  ok: "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300",
+  bad: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+};
+
+function ShipmentBadge({ order, shipment }: { order: Order; shipment?: OrderShipment }) {
+  const paid = order.paymentStatus === "paid" && order.status !== "Cancelado";
+  const b = shipmentBadge(shipment, paid);
+  return (
+    <span title={shipment?.note ?? undefined} className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${SHIPMENT_TONES[b.tone]}`}>
+      {b.text}
+    </span>
+  );
+}
+
+/** Etiqueta da Melhor Envio no detalhe do pedido: situação, avisos e as ações (gerar, imprimir, rastreio, cancelar). */
+function ShipmentPanel({ order, shipment }: { order: Order; shipment?: OrderShipment }) {
+  const act = useLabelAction();
+  const [nfe, setNfe] = useState("");
+  const paid = order.paymentStatus === "paid" && order.status !== "Cancelado";
+  if (!paid) {
+    return shipment?.note ? (
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Envio</p>
+        <p className="text-muted-foreground">{shipment.note}</p>
+      </div>
+    ) : null;
+  }
+
+  const generated = shipment?.step === "generated";
+  const processing = shipment?.status === "processing";
+  const failed = shipment?.status === "failed";
+  const nfeDigits = nfe.replace(/\D/g, "");
+  const nfeInvalid = nfeDigits.length > 0 && !isValidNfeKey(nfeDigits);
+  const tracking = order.trackingCode ?? shipment?.tracking ?? null;
+  const badge = shipmentBadge(shipment, paid);
+  const errorMessage = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
+
+  const generate = () =>
+    act.mutate(
+      { action: "generate", orderId: order.id, invoiceKey: nfeDigits || undefined },
+      {
+        onSuccess: (r) => {
+          setNfe("");
+          toast.success(r.result === "already_generated" ? "Este pedido já tem etiqueta." : r.result === "cart" ? "Envio criado no carrinho da Melhor Envio." : "Etiqueta gerada.");
+          if (r.estimated) toast.warning("Este pedido usou medidas estimadas: a Melhor Envio pode cobrar ajuste de peso.");
+        },
+        onError: (err) => toast.error(errorMessage(err, "Não consegui gerar a etiqueta.")),
+      },
+    );
+
+  const print = () => {
+    // Abre a aba antes do pedido (senão o navegador bloqueia o pop-up) e depois aponta para o link da etiqueta.
+    const win = window.open("", "_blank");
+    if (win) win.opener = null;
+    act.mutate(
+      { action: "print", orderId: order.id },
+      {
+        onSuccess: (r) => {
+          if (r.url && win) win.location.href = r.url;
+          else if (r.url) window.location.href = r.url;
+        },
+        onError: (err) => {
+          win?.close();
+          toast.error(errorMessage(err, "Não consegui abrir a etiqueta."));
+        },
+      },
+    );
+  };
+
+  const refreshTracking = () =>
+    act.mutate(
+      { action: "tracking", orderId: order.id },
+      {
+        onSuccess: (r) => toast[r.tracking ? "success" : "info"](r.tracking ? `Rastreio: ${r.tracking}` : "A transportadora ainda não liberou o código de rastreio."),
+        onError: (err) => toast.error(errorMessage(err, "Não consegui atualizar o rastreio.")),
+      },
+    );
+
+  const cancel = () => {
+    if (!confirm("Cancelar a etiqueta na Melhor Envio? O valor volta para a carteira em até 12 horas, se a transportadora ainda não coletou.")) return;
+    act.mutate(
+      { action: "cancel", orderId: order.id },
+      {
+        onSuccess: () => toast.success("Etiqueta cancelada."),
+        onError: (err) => toast.error(errorMessage(err, "Não consegui cancelar a etiqueta.")),
+      },
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Envio (Melhor Envio)</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${SHIPMENT_TONES[badge.tone]}`}>{badge.text}</span>
+        {shipment?.protocol && <span className="font-mono text-xs text-muted-foreground">{shipment.protocol}</span>}
+        {shipment?.price != null && <span className="text-xs text-muted-foreground">custo da etiqueta {formatCurrency(shipment.price)}</span>}
+      </div>
+
+      {tracking && (
+        <p>
+          <span className="text-muted-foreground">Código de rastreio: </span>
+          <span className="font-mono font-semibold">{tracking}</span>
+        </p>
+      )}
+      {order.invoiceKey && (
+        <p className="break-all text-xs text-muted-foreground">
+          NF-e: <span className="font-mono">{order.invoiceKey}</span>
+        </p>
+      )}
+      {shipment?.note && (
+        <p
+          className={`flex items-start gap-2 rounded-md border px-3 py-2 ${failed ? "border-red-500/30 bg-red-500/10 text-red-800 dark:text-red-300" : "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-300"}`}
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {shipment.note}
+        </p>
+      )}
+      {shipment?.step === "cart" && !failed && !processing && (
+        <p className="text-muted-foreground">O envio está no carrinho da Melhor Envio (vale 7 dias). Pague e imprima por lá, ou gere por aqui.</p>
+      )}
+      {!shipment && <p className="text-muted-foreground">A etiqueta ainda não foi gerada para este pedido.</p>}
+
+      {!generated && (
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <label htmlFor={`nfe-${order.id}`} className="text-xs font-semibold text-muted-foreground">
+              Chave da nota fiscal (44 dígitos){order.invoiceKey ? " — já informada" : ""}
+            </label>
+            <Input
+              id={`nfe-${order.id}`}
+              value={nfe}
+              onChange={(e) => setNfe(e.target.value)}
+              placeholder={order.invoiceKey ? "Deixe em branco para usar a chave já informada" : "Obrigatória se a loja usa nota fiscal na etiqueta"}
+              inputMode="numeric"
+              aria-invalid={nfeInvalid}
+              className="font-mono text-xs"
+            />
+            {nfeInvalid && <p className="text-xs text-destructive">Chave inválida: confira os 44 dígitos.</p>}
+          </div>
+          <Button type="button" size="sm" onClick={generate} disabled={act.isPending || processing || nfeInvalid}>
+            {(act.isPending || processing) && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+            {failed || shipment?.step ? "Tentar gerar de novo" : "Gerar etiqueta"}
+          </Button>
+          <p className="text-xs text-muted-foreground">Comprar a etiqueta usa o saldo da carteira da Melhor Envio.</p>
+        </div>
+      )}
+
+      {generated && (
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" onClick={print} disabled={act.isPending}>Imprimir etiqueta</Button>
+          <Button type="button" size="sm" variant="outline" onClick={refreshTracking} disabled={act.isPending}>Atualizar rastreio</Button>
+          <Button type="button" size="sm" variant="outline" onClick={cancel} disabled={act.isPending} className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive">
+            Cancelar etiqueta
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1389,8 +1585,10 @@ function RefundPanel({ order }: { order: Order }) {
     refund.mutate(
       { orderId: order.id, restoreStock: holdsStock && restoreStock, reason: REFUND_REASONS[reasonIdx].label },
       {
-        onSuccess: () => {
+        onSuccess: (res) => {
           toast.success(`Pedido #${order.id} estornado. O Asaas devolve o valor ao cliente.`);
+          if (res.label === "cancelled") toast.info("A etiqueta da Melhor Envio foi cancelada: o valor volta para a carteira em até 12 horas.");
+          if (res.label === "failed") toast.warning("A etiqueta não foi cancelada. Cancele no painel da Melhor Envio para não perder o valor.");
           setOpen(false);
         },
         onError: (err) => toast.error(err instanceof Error ? err.message : "Não consegui estornar."),
@@ -1456,7 +1654,7 @@ function RefundPanel({ order }: { order: Order }) {
   );
 }
 
-function OrderDetailModal({ order, canRefund, onClose }: { order: Order; canRefund: boolean; onClose: () => void }) {
+function OrderDetailModal({ order, canRefund, shipment, onClose }: { order: Order; canRefund: boolean; shipment?: OrderShipment; onClose: () => void }) {
   const addr = order.shippingAddress;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" onClick={onClose}>
@@ -1523,6 +1721,8 @@ function OrderDetailModal({ order, canRefund, onClose }: { order: Order; canRefu
               ))}
           </div>
 
+          <ShipmentPanel order={order} shipment={shipment} />
+
           <div className="space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Itens</p>
             <div className="divide-y divide-border/50 rounded-lg border border-border/60">
@@ -1541,10 +1741,633 @@ function OrderDetailModal({ order, canRefund, onClose }: { order: Order; canRefu
                   <span className="font-mono">-{formatCurrency(order.discount)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-muted-foreground"><span>Frete</span><span className="font-mono">{formatCurrency(order.shipping)}</span></div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Frete</span>
+                <span className="font-mono">{order.shipping === 0 ? "Grátis" : formatCurrency(order.shipping)}</span>
+              </div>
+              {order.shippingOption.freeShippingRule && (
+                <p className="text-xs text-muted-foreground">
+                  Cortesia da regra “{order.shippingOption.freeShippingRule}”
+                  {order.shippingOption.originalPrice != null ? `: a etiqueta custa cerca de ${formatCurrency(order.shippingOption.originalPrice)} para a loja` : ""}.
+                </p>
+              )}
               <div className="flex justify-between border-t border-border/50 pt-2 text-base font-bold text-foreground"><span>Total</span><span className="font-mono">{formatCurrency(order.total)}</span></div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_SHIPPING_RULE: ShippingRuleInput = {
+  name: "",
+  active: true,
+  areaType: "states",
+  states: [],
+  cities: [],
+  cepFrom: null,
+  cepTo: null,
+  minOrderValue: null,
+  scope: "cheapest",
+};
+
+function ShippingTab() {
+  const { data: rules, isLoading } = useShippingRules();
+  const save = useSaveShippingRule();
+  const remove = useDeleteShippingRule();
+  const [editing, setEditing] = useState<{ id?: number; rule: ShippingRuleInput } | null>(null);
+
+  const toggle = (r: ShippingRule) =>
+    save.mutate(
+      { id: r.id, rule: { ...r, active: !r.active } },
+      {
+        onSuccess: () => toast.success(r.active ? "Regra pausada." : "Regra ativada."),
+        onError: () => toast.error("Não consegui alterar a regra."),
+      },
+    );
+
+  const handleDelete = (r: ShippingRule) => {
+    if (confirm(`Excluir a regra "${r.name}"? A ação não pode ser desfeita.`)) {
+      remove.mutate(r.id, {
+        onSuccess: () => toast.success("Regra excluída."),
+        onError: () => toast.error("Não consegui excluir a regra."),
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-display font-bold text-foreground">Frete</h2>
+          <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+            Defina quando o frete sai grátis para o cliente, por região e valor do pedido. A loja continua pagando a
+            etiqueta da transportadora: o cliente só vê "Grátis".
+          </p>
+        </div>
+        <Button onClick={() => setEditing({ rule: EMPTY_SHIPPING_RULE })}>
+          <Plus className="mr-2 h-4 w-4" /> Nova regra
+        </Button>
+      </div>
+
+      <ul className="max-w-3xl list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+        <li>O valor mínimo conta só os produtos (sem frete e antes de cupom).</li>
+        <li>A região vem do CEP de entrega, não do que o cliente digita no endereço.</li>
+        <li>Se mais de uma regra valer, vence a que libera todas as opções; se empatar, a mais antiga.</li>
+        <li>Regras pausadas não valem. Sem nenhuma regra ativa, todo cliente paga o frete normal.</li>
+      </ul>
+
+      {isLoading ? (
+        <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">Carregando regras...</div>
+      ) : !rules || rules.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
+          Nenhuma regra ainda. Hoje todo cliente paga o frete cotado na transportadora. Clique em "Nova regra" para
+          oferecer frete grátis, por exemplo, para a sua cidade ou para pedidos acima de um valor.
+        </div>
+      ) : (
+        <div className="max-w-3xl space-y-3">
+          {rules.map((r) => (
+            <div key={r.id} className={`rounded-xl border border-border/60 bg-card p-4 shadow-sm ${r.active ? "" : "opacity-60"}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-foreground">{r.name}</span>
+                    <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${r.active ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300" : "border-border/60 bg-secondary text-muted-foreground"}`}>
+                      {r.active ? "Ativa" : "Pausada"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">Frete grátis para {describeRule(r)}.</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => toggle(r)} disabled={save.isPending}>
+                    {r.active ? "Pausar" : "Ativar"}
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8" aria-label={`Editar ${r.name}`} onClick={() => setEditing({ id: r.id, rule: r })}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="outline" size="icon" className="h-8 w-8 hover:bg-destructive hover:text-destructive-foreground hover:border-destructive" aria-label={`Excluir ${r.name}`} onClick={() => handleDelete(r)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <ShippingSimulator />
+
+      <LabelsSettingsCard />
+
+      {editing && <ShippingRuleModal key={editing.id ?? "nova"} id={editing.id} initial={editing.rule} onClose={() => setEditing(null)} />}
+    </div>
+  );
+}
+
+const LABEL_MODES: { id: LabelMode; label: string; hint: string }[] = [
+  { id: "off", label: "Desligado", hint: "Nenhuma etiqueta é criada sozinha. A equipe gera pelo pedido." },
+  { id: "cart", label: "Só criar no carrinho", hint: "O envio já vai montado para a Melhor Envio; você paga e imprime por lá." },
+  { id: "full", label: "Comprar e gerar", hint: "Depois do pagamento, compra e gera a etiqueta sozinho. Usa o saldo da carteira." },
+];
+
+const LABEL_DOCUMENTS: { id: LabelDocument; label: string; hint: string }[] = [
+  { id: "invoice", label: "Nota fiscal", hint: "A pessoa emite a nota e informa a chave no pedido; a etiqueta sai em seguida." },
+  { id: "content_declaration", label: "Declaração de conteúdo", hint: "A etiqueta sai logo após o pagamento, sem nota." },
+];
+
+/** Etiquetas da Melhor Envio: modo, documento fiscal e dados do remetente (só administrador). */
+function LabelsSettingsCard() {
+  const { data, isLoading, isError } = useLabelSettings();
+  const save = useSaveLabelSettings();
+  const check = useLabelCheck();
+  const [mode, setMode] = useState<LabelMode>("off");
+  const [documentKind, setDocumentKind] = useState<LabelDocument | "">("");
+  const [sender, setSender] = useState<Sender>(EMPTY_SENDER);
+
+  useEffect(() => {
+    if (data) {
+      setMode(data.settings.mode);
+      setDocumentKind(data.settings.document ?? "");
+      setSender(data.sender);
+    }
+  }, [data]);
+
+  const set = (key: keyof Sender, value: string) => setSender((cur) => ({ ...cur, [key]: value }));
+  const problems = senderProblems(sender);
+  const missing = [...(documentKind === "" ? ["documento da etiqueta"] : []), ...problems];
+
+  const handleCep = async (raw: string) => {
+    const cep = normalizeCep(raw);
+    set("postalCode", cep);
+    if (cep.length === 8) {
+      const found = await lookupCep(cep);
+      if (found) setSender((cur) => ({ ...cur, postalCode: cep, address: found.street || cur.address, district: found.district || cur.district, city: found.city || cur.city, state: found.state || cur.state }));
+    }
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mode !== "off" && missing.length > 0) {
+      toast.error(`Para ligar as etiquetas, falta: ${missing.join(", ")}.`);
+      return;
+    }
+    save.mutate(
+      { settings: { mode, document: documentKind === "" ? null : documentKind }, sender },
+      {
+        onSuccess: () => toast.success(mode === "off" ? "Salvo. As etiquetas continuam desligadas." : "Salvo. As etiquetas passam a valer nos próximos pagamentos."),
+        onError: () => toast.error("Não consegui salvar. Só administradores podem alterar."),
+      },
+    );
+  };
+
+  const r = check.data;
+
+  return (
+    <form onSubmit={handleSave} className="max-w-3xl space-y-6 rounded-xl border border-border/60 bg-card p-5 shadow-sm">
+      <div>
+        <h3 className="font-display text-lg font-bold">Etiquetas da Melhor Envio</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Defina se a etiqueta é criada sozinha quando o pagamento é confirmado. Comprar a etiqueta debita o saldo da carteira da
+          Melhor Envio. Se der algum problema (saldo, dados, transportadora), o pedido mostra o motivo e dá para tentar de novo.
+        </p>
+      </div>
+
+      {isError && <p className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-800 dark:text-red-300">Não consegui carregar as configurações. Só administradores têm acesso.</p>}
+
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-foreground">Quando o pagamento for confirmado</p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {LABEL_MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setMode(m.id)}
+              aria-pressed={mode === m.id}
+              disabled={isLoading}
+              className={`rounded-lg border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${mode === m.id ? "border-primary bg-primary/10" : "border-border/60 hover:bg-secondary/40"}`}
+            >
+              <span className="block font-semibold">{m.label}</span>
+              <span className="block text-xs text-muted-foreground">{m.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-foreground">Documento da etiqueta</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {LABEL_DOCUMENTS.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => setDocumentKind(d.id)}
+              aria-pressed={documentKind === d.id}
+              disabled={isLoading}
+              className={`rounded-lg border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${documentKind === d.id ? "border-primary bg-primary/10" : "border-border/60 hover:bg-secondary/40"}`}
+            >
+              <span className="block font-semibold">{d.label}</span>
+              <span className="block text-xs text-muted-foreground">{d.hint}</span>
+            </button>
+          ))}
+        </div>
+        <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            A Melhor Envio só aceita a declaração de conteúdo para pessoa física ou empresa que <strong>não é contribuinte de ICMS</strong>.
+            Se a loja emite nota fiscal nas vendas, escolha <strong>Nota fiscal</strong>. Confirme com o contador antes de escolher.
+          </span>
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-sm font-semibold text-foreground">Remetente (quem aparece na etiqueta)</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1 sm:col-span-2">
+            <label htmlFor="snd-name" className="text-xs font-semibold text-muted-foreground">Nome ou razão social</label>
+            <Input id="snd-name" value={sender.name} onChange={(e) => set("name", e.target.value)} maxLength={120} />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="snd-doc" className="text-xs font-semibold text-muted-foreground">CPF ou CNPJ</label>
+            <Input id="snd-doc" value={formatCpfCnpj(sender.document)} onChange={(e) => set("document", e.target.value.replace(/\D/g, "").slice(0, 14))} inputMode="numeric" />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="snd-ie" className="text-xs font-semibold text-muted-foreground">Inscrição estadual (se tiver)</label>
+            <Input id="snd-ie" value={sender.stateRegister} onChange={(e) => set("stateRegister", e.target.value)} maxLength={30} placeholder="Em branco = isento" />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="snd-phone" className="text-xs font-semibold text-muted-foreground">Telefone com DDD</label>
+            <Input id="snd-phone" value={formatPhone(sender.phone)} onChange={(e) => set("phone", e.target.value.replace(/\D/g, "").slice(0, 11))} inputMode="tel" />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="snd-email" className="text-xs font-semibold text-muted-foreground">E-mail</label>
+            <Input id="snd-email" type="email" value={sender.email} onChange={(e) => set("email", e.target.value)} maxLength={120} />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="snd-cep" className="text-xs font-semibold text-muted-foreground">CEP</label>
+            <Input id="snd-cep" value={formatCep(sender.postalCode)} onChange={(e) => handleCep(e.target.value)} inputMode="numeric" placeholder="00000-000" />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="snd-street" className="text-xs font-semibold text-muted-foreground">Rua</label>
+            <Input id="snd-street" value={sender.address} onChange={(e) => set("address", e.target.value)} maxLength={120} />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="snd-number" className="text-xs font-semibold text-muted-foreground">Número</label>
+            <Input id="snd-number" value={sender.number} onChange={(e) => set("number", e.target.value)} maxLength={12} />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="snd-comp" className="text-xs font-semibold text-muted-foreground">Complemento</label>
+            <Input id="snd-comp" value={sender.complement} onChange={(e) => set("complement", e.target.value)} maxLength={80} />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="snd-district" className="text-xs font-semibold text-muted-foreground">Bairro</label>
+            <Input id="snd-district" value={sender.district} onChange={(e) => set("district", e.target.value)} maxLength={80} />
+          </div>
+          <div className="grid grid-cols-[1fr_80px] gap-3">
+            <div className="space-y-1">
+              <label htmlFor="snd-city" className="text-xs font-semibold text-muted-foreground">Cidade</label>
+              <Input id="snd-city" value={sender.city} onChange={(e) => set("city", e.target.value)} maxLength={80} />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="snd-uf" className="text-xs font-semibold text-muted-foreground">UF</label>
+              <Input id="snd-uf" value={sender.state} onChange={(e) => set("state", e.target.value.toUpperCase().slice(0, 2))} maxLength={2} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+        <li>LATAM Cargo e Azul Cargo não podem ser compradas por aqui: esses pedidos ficam com aviso para gerar direto na Melhor Envio.</li>
+        <li>Produtos sem peso e medidas usam uma caixa padrão, e a Melhor Envio pode cobrar ajuste depois da postagem. Preencha o cadastro dos produtos.</li>
+        <li>Pedido estornado tem a etiqueta cancelada automaticamente (o valor volta para a carteira em até 12 horas, se a transportadora ainda não coletou).</li>
+      </ul>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={save.isPending || isLoading}>
+          {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Salvar
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => check.mutate(undefined, { onError: (err) => toast.error(err instanceof Error ? err.message : "Não consegui testar.") })} disabled={check.isPending}>
+          {check.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Testar conexão
+        </Button>
+        {mode !== "off" && missing.length > 0 && <span className="text-xs text-amber-700 dark:text-amber-300">Falta: {missing.join(", ")}.</span>}
+      </div>
+
+      {r && (
+        <div className="space-y-2 text-sm">
+          {r.balance ? (
+            <p className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-green-800 dark:text-green-300">
+              <Check className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Conexão ok. Saldo da carteira na Melhor Envio: <strong>{formatCurrency(r.balance.balance)}</strong>.</span>
+            </p>
+          ) : (
+            <p className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-800 dark:text-red-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {r.tokenNote ?? "Não consegui ler o saldo da Melhor Envio."}
+            </p>
+          )}
+          {r.senderMissing.length > 0 && <p className="text-muted-foreground">Cadastro salvo incompleto. Falta: {r.senderMissing.join(", ")}.</p>}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function ShippingSimulator() {
+  const check = useCheckShippingRules();
+  const [cep, setCep] = useState("");
+  const [value, setValue] = useState("300");
+
+  const run = (e: React.FormEvent) => {
+    e.preventDefault();
+    const subtotal = Number(value.replace(",", "."));
+    if (normalizeCep(cep).length !== 8) {
+      toast.error("Digite um CEP com 8 números.");
+      return;
+    }
+    if (!Number.isFinite(subtotal) || subtotal < 0) {
+      toast.error("Informe o valor do pedido.");
+      return;
+    }
+    check.mutate({ cep: normalizeCep(cep), subtotal }, { onError: (err) => toast.error(err instanceof Error ? err.message : "Não consegui simular.") });
+  };
+  const r = check.data;
+
+  return (
+    <form onSubmit={run} className="max-w-3xl space-y-4 rounded-xl border border-border/60 bg-card p-5 shadow-sm">
+      <div>
+        <h3 className="font-display text-lg font-bold">Simular</h3>
+        <p className="text-sm text-muted-foreground">Veja se um cliente teria frete grátis com as regras ativas agora.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+        <div className="space-y-1">
+          <label htmlFor="sim-cep" className="text-xs font-semibold text-muted-foreground">CEP de entrega</label>
+          <Input id="sim-cep" value={cep} onChange={(e) => setCep(formatCep(e.target.value))} placeholder="00000-000" inputMode="numeric" />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="sim-value" className="text-xs font-semibold text-muted-foreground">Valor dos produtos (R$)</label>
+          <Input id="sim-value" value={value} onChange={(e) => setValue(e.target.value)} inputMode="decimal" />
+        </div>
+        <Button type="submit" variant="secondary" disabled={check.isPending}>
+          {check.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Simular
+        </Button>
+      </div>
+      {r && (
+        <div className="space-y-2 text-sm">
+          <p className="text-muted-foreground">
+            {r.place ? <>Esse CEP fica em <strong className="text-foreground">{r.place.city}/{r.place.uf}</strong>.</> : "Não consegui descobrir a cidade desse CEP."}
+          </p>
+          {r.appliedRule ? (
+            <p className="flex items-start gap-2 rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-green-800 dark:text-green-300">
+              <Check className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Teria <strong>frete grátis</strong> pela regra “{r.appliedRule.name}” (
+                {r.appliedRule.scope === "all" ? "todas as opções" : "só a opção mais barata"}).
+              </span>
+            </p>
+          ) : (
+            <p className="flex items-start gap-2 rounded-md border border-border/60 bg-secondary/40 px-3 py-2">
+              <X className="mt-0.5 h-4 w-4 shrink-0" /> Pagaria o frete normal: nenhuma regra ativa vale para esse CEP e esse valor.
+            </p>
+          )}
+          {!r.place && r.needsPlace && (
+            <p className="flex items-start gap-2 text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> Regras por estado ou cidade não valem quando a cidade não é encontrada.
+            </p>
+          )}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function ShippingRuleModal({ id, initial, onClose }: { id?: number; initial: ShippingRuleInput; onClose: () => void }) {
+  const save = useSaveShippingRule();
+  const [name, setName] = useState(initial.name);
+  const [active, setActive] = useState(initial.active);
+  const [areaType, setAreaType] = useState(initial.areaType);
+  const [states, setStates] = useState<string[]>(initial.areaType === "states" ? initial.states : []);
+  const [cityState, setCityState] = useState(initial.areaType === "cities" ? (initial.states[0] ?? "PR") : "PR");
+  const [citiesText, setCitiesText] = useState(initial.cities.join("\n"));
+  const [cepFrom, setCepFrom] = useState(initial.cepFrom ?? "");
+  const [cepTo, setCepTo] = useState(initial.cepTo ?? "");
+  const [minText, setMinText] = useState(initial.minOrderValue == null ? "" : String(initial.minOrderValue).replace(".", ","));
+  const [scope, setScope] = useState(initial.scope);
+
+  /** Monta a regra a partir do formulário, ou devolve a primeira coisa que está errada. */
+  const build = (): { rule: ShippingRuleInput } | { error: string } => {
+    const trimmed = name.trim();
+    if (trimmed.length < 1 || trimmed.length > 80) return { error: "Dê um nome para a regra (até 80 letras)." };
+
+    const minRaw = minText.trim();
+    const min = minRaw === "" ? null : Number(minRaw.replace(",", "."));
+    if (min !== null && (!Number.isFinite(min) || min < 0 || min > 1000000)) return { error: "Valor mínimo inválido." };
+
+    const base = { name: trimmed, active, minOrderValue: min === null ? null : Math.round(min * 100) / 100, scope };
+    if (areaType === "all") return { rule: { ...base, areaType, states: [], cities: [], cepFrom: null, cepTo: null } };
+    if (areaType === "states") {
+      if (states.length === 0) return { error: "Escolha pelo menos um estado." };
+      return { rule: { ...base, areaType, states, cities: [], cepFrom: null, cepTo: null } };
+    }
+    if (areaType === "cities") {
+      const seen = new Set<string>();
+      const cities: string[] = [];
+      for (const raw of citiesText.split(/[\n,]/)) {
+        const c = raw.trim().replace(/\s+/g, " ");
+        const key = c.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        if (c && !seen.has(key)) {
+          seen.add(key);
+          cities.push(c);
+        }
+      }
+      if (cities.length === 0) return { error: "Digite pelo menos uma cidade." };
+      if (cities.length > 200 || cities.some((c) => c.length > 80)) return { error: "Cidades demais ou nome muito longo." };
+      return { rule: { ...base, areaType, states: [cityState], cities, cepFrom: null, cepTo: null } };
+    }
+    const from = normalizeCep(cepFrom);
+    const to = normalizeCep(cepTo);
+    if (from.length !== 8 || to.length !== 8) return { error: "Informe os dois CEPs da faixa, com 8 números cada." };
+    if (from > to) return { error: "O CEP inicial precisa ser menor ou igual ao final." };
+    return { rule: { ...base, areaType, states: [], cities: [], cepFrom: from, cepTo: to } };
+  };
+
+  const built = build();
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if ("error" in built) {
+      toast.error(built.error);
+      return;
+    }
+    save.mutate(
+      { id, rule: built.rule },
+      {
+        onSuccess: () => {
+          toast.success(id ? "Regra atualizada. Já vale no site." : "Regra criada. Já vale no site.");
+          onClose();
+        },
+        onError: () => toast.error("Não consegui salvar a regra. Só administradores podem alterar."),
+      },
+    );
+  };
+
+  const toggleState = (uf: string) => setStates((cur) => (cur.includes(uf) ? cur.filter((x) => x !== uf) : [...cur, uf]));
+  const AREAS: { id: ShippingRuleInput["areaType"]; label: string; hint: string }[] = [
+    { id: "states", label: "Estados", hint: "Todo o estado escolhido" },
+    { id: "cities", label: "Cidades", hint: "Cidades de um estado" },
+    { id: "cep_range", label: "Faixa de CEP", hint: "De um CEP a outro" },
+    { id: "all", label: "Todo o Brasil", hint: "Qualquer endereço" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={id ? "Editar regra de frete" : "Nova regra de frete"}
+        className="bg-card border border-border shadow-2xl rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center p-6 border-b border-border/50 shrink-0">
+          <h2 className="text-xl font-display font-bold text-foreground">{id ? "Editar regra de frete" : "Nova regra de frete"}</h2>
+          <button onClick={onClose} aria-label="Fechar" className="text-muted-foreground hover:text-foreground transition-colors bg-secondary/50 p-2 rounded-full hover:bg-secondary">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <form id="shipping-rule-form" onSubmit={handleSave} className="overflow-y-auto flex-1 p-6 space-y-6">
+          <div className="space-y-2">
+            <label htmlFor="rule-name" className="text-sm font-semibold text-foreground">Nome da regra</label>
+            <Input id="rule-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Cortesia para Cascavel" maxLength={80} />
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-foreground">Onde vale</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {AREAS.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setAreaType(a.id)}
+                  aria-pressed={areaType === a.id}
+                  className={`rounded-lg border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${areaType === a.id ? "border-primary bg-primary/10" : "border-border/60 hover:bg-secondary/40"}`}
+                >
+                  <span className="block font-semibold">{a.label}</span>
+                  <span className="block text-xs text-muted-foreground">{a.hint}</span>
+                </button>
+              ))}
+            </div>
+
+            {areaType === "states" && (
+              <div className="space-y-3 pt-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">Marcar região:</span>
+                  {BR_REGIONS.map((reg) => (
+                    <button key={reg.label} type="button" onClick={() => setStates((cur) => [...new Set([...cur, ...reg.ufs])])} className="rounded-full border border-border/60 px-2.5 py-1 hover:bg-secondary">
+                      {reg.label}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => setStates([])} className="rounded-full border border-border/60 px-2.5 py-1 text-muted-foreground hover:bg-secondary">
+                    Limpar
+                  </button>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 sm:grid-cols-9">
+                  {BR_STATES.map((st) => (
+                    <button
+                      key={st.uf}
+                      type="button"
+                      title={st.name}
+                      aria-pressed={states.includes(st.uf)}
+                      onClick={() => toggleState(st.uf)}
+                      className={`rounded-md border px-2 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${states.includes(st.uf) ? "border-primary bg-primary text-primary-foreground" : "border-border/60 hover:bg-secondary"}`}
+                    >
+                      {st.uf}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {areaType === "cities" && (
+              <div className="grid gap-3 pt-2 sm:grid-cols-[140px_1fr]">
+                <div className="space-y-1">
+                  <label htmlFor="rule-uf" className="text-xs font-semibold text-muted-foreground">Estado</label>
+                  <select id="rule-uf" value={cityState} onChange={(e) => setCityState(e.target.value)} className="h-10 w-full rounded-md border bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                    {BR_STATES.map((st) => (
+                      <option key={st.uf} value={st.uf}>{st.uf} — {st.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="rule-cities" className="text-xs font-semibold text-muted-foreground">Cidades (uma por linha)</label>
+                  <textarea
+                    id="rule-cities"
+                    value={citiesText}
+                    onChange={(e) => setCitiesText(e.target.value)}
+                    rows={4}
+                    placeholder={"Cascavel\nFoz do Iguaçu"}
+                    className="w-full rounded-md border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  />
+                </div>
+              </div>
+            )}
+
+            {areaType === "cep_range" && (
+              <div className="grid gap-3 pt-2 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label htmlFor="rule-cep-from" className="text-xs font-semibold text-muted-foreground">CEP inicial</label>
+                  <Input id="rule-cep-from" value={formatCep(cepFrom)} onChange={(e) => setCepFrom(e.target.value)} placeholder="85800-000" inputMode="numeric" />
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="rule-cep-to" className="text-xs font-semibold text-muted-foreground">CEP final</label>
+                  <Input id="rule-cep-to" value={formatCep(cepTo)} onChange={(e) => setCepTo(e.target.value)} placeholder="85819-999" inputMode="numeric" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="rule-min" className="text-sm font-semibold text-foreground">Valor mínimo do pedido (R$)</label>
+            <Input id="rule-min" value={minText} onChange={(e) => setMinText(e.target.value)} inputMode="decimal" placeholder="Deixe em branco para valer em qualquer valor" />
+            <p className="text-xs text-muted-foreground">Conta só os produtos, sem o frete e antes do cupom.</p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-foreground">O que fica grátis</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {([
+                ["cheapest", "Só a opção mais barata", "O cliente escolhe: grátis na mais barata, ou paga pela mais rápida."],
+                ["all", "Todas as opções", "Toda transportadora fica grátis. A loja paga a que o cliente escolher."],
+              ] as const).map(([val, label, hint]) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setScope(val)}
+                  aria-pressed={scope === val}
+                  className={`rounded-lg border p-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${scope === val ? "border-primary bg-primary/10" : "border-border/60 hover:bg-secondary/40"}`}
+                >
+                  <span className="block font-semibold">{label}</span>
+                  <span className="block text-xs text-muted-foreground">{hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="h-4 w-4" />
+            Regra ativa (vale no site assim que salvar)
+          </label>
+
+          <p className="rounded-lg border border-border/60 bg-secondary/30 px-4 py-3 text-sm">
+            <span className="font-semibold">Resumo: </span>
+            {"error" in built ? <span className="text-muted-foreground">{built.error}</span> : <>frete grátis para {describeRule(built.rule)}.</>}
+          </p>
+        </form>
+        <div className="flex justify-end gap-2 p-6 border-t border-border/50 shrink-0">
+          <Button type="button" variant="outline" onClick={onClose} disabled={save.isPending}>Cancelar</Button>
+          <Button type="submit" form="shipping-rule-form" disabled={save.isPending || "error" in built}>
+            {save.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Salvar regra
+          </Button>
         </div>
       </div>
     </div>

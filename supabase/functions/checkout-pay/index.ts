@@ -31,8 +31,10 @@ import { IntegrationError, UserError } from "../_shared/errors.ts";
 import { CORS_HEADERS, json, serviceClient } from "../_shared/http.ts";
 import { installmentsAllowed, maxInstallments } from "../_shared/installments.ts";
 import { loadInstallmentSettings } from "../_shared/store-settings.ts";
+import { triggerAutoLabel } from "../_shared/label-store.ts";
 import { loadShippingConfig, quoteForItems } from "../_shared/shipping.ts";
 import { productLoader } from "../_shared/shipping-db.ts";
+import { applyRulesToQuote } from "../_shared/shipping-rules.ts";
 
 /** A chamada que cobra o cartão ficou sem resposta: pode ou não ter cobrado. */
 class UncertainChargeError extends Error {}
@@ -134,6 +136,7 @@ async function charge(args: {
   if (isPaidStatus(payment.status)) {
     const { error } = await db.rpc("mark_order_paid", { p_order_id: orderId, p_payment_id: payment.id });
     if (error) console.error("[checkout-pay] pedido", orderId, "pago mas mark_order_paid falhou:", error.message);
+    else triggerAutoLabel(orderId); // etiqueta da Melhor Envio, em segundo plano (se ligada no painel)
     return { paymentStatus: "paid" };
   }
   return { paymentStatus: "pending" }; // em análise: o aviso do Asaas confirma ou recusa
@@ -173,11 +176,18 @@ Deno.serve(async (req) => {
     await db.rpc("expire_unpaid_orders");
 
     // 5. frete recotado no servidor — o valor do navegador é ignorado
-    const { options } = await quoteForItems({
+    const quote = await quoteForItems({
       cfg: shipCfg,
       items: input.items,
       destCep: input.address.postalCode,
       loadProducts: productLoader(db),
+    });
+    // Frete grátis do painel: decidido aqui, pelo CEP, nunca pelo que o navegador mostrou.
+    const { options } = await applyRulesToQuote({
+      db,
+      options: quote.options,
+      cep: input.address.postalCode,
+      subtotal: quote.subtotal,
     });
     const shipping = options.find((o) => o.id === input.shippingServiceId);
     if (!shipping) throw new UserError("O frete escolhido não está mais disponível. Recalcule o frete.", 409);

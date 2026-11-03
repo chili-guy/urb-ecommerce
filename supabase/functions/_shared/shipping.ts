@@ -11,6 +11,10 @@ export type ShippingOption = {
   price: number;
   deliveryDays: number;
   description: string;
+  /** Só quando o frete foi zerado por uma regra do painel: o que a Melhor Envio cobra de verdade (custo da etiqueta). */
+  originalPrice?: number;
+  /** Nome da regra do painel que zerou o frete. */
+  freeShippingRule?: string;
 };
 
 export type QuoteItem = { productId: number; quantity: number };
@@ -191,15 +195,19 @@ export async function quoteForItems(args: {
   destCep: string;
   loadProducts: (ids: number[]) => Promise<ShippingProductRow[]>;
   fetchImpl?: typeof fetch;
-}): Promise<{ options: ShippingOption[]; estimated: boolean }> {
+}): Promise<{ options: ShippingOption[]; estimated: boolean; subtotal: number }> {
   const ids = [...new Set(args.items.map((i) => i.productId))];
   const rows = await args.loadProducts(ids);
+  const products = new Map(rows.map((r) => [r.id, r]));
   const { body, estimated } = buildCalculateBody({
     originCep: args.cfg.originCep,
     destCep: args.destCep,
     items: args.items,
-    products: new Map(rows.map((r) => [r.id, r])),
+    products,
   });
   const options = await requestQuote(args.cfg, body, args.fetchImpl);
-  return { options, estimated };
+  // Soma dos produtos pelo preço do banco (base do "valor mínimo" das regras de frete grátis).
+  const subtotal =
+    Math.round(args.items.reduce((sum, i) => sum + Number(products.get(i.productId)?.price ?? 0) * i.quantity, 0) * 100) / 100;
+  return { options, estimated, subtotal };
 }
